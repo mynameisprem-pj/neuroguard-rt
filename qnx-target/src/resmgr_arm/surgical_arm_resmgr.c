@@ -1,0 +1,134 @@
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/neutrino.h>
+#include <sys/syspage.h>
+#include "../../include/neuroguard_ipc.h"
+
+static resmgr_connect_funcs_t connect_funcs;
+static resmgr_io_funcs_t      io_funcs;
+static iofunc_attr_t          attr;
+
+static supervisor_reply_t latest_state = {
+    .safe_x = 50.0,
+    .safe_y = 50.0,
+    .distance_to_artery = 35.0,
+    .scheduling_jitter_ns = 840,
+    .loop_latency_us = 12,
+    .state = STATE_NOMINAL_AI,
+    .safety_interventions_count = 0,
+    .cpu_bomb_active = 0
+};
+static pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* Handle POSIX read() -> e.g., `cat /dev/surgical_arm` */
+int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
+    int status;
+    if ((status = iofunc_read_verify(ctp, msg, ocb, NULL)) != EOK) {
+        return status;
+    }
+    if ((msg->i.xtype & _IO_XTYPE_MASK) != _IO_XTYPE_NONE) {
+        return ENOSYS;
+    }
+
+    char buf[512];
+    pthread_mutex_lock(&state_mutex);
+    int len = snprintf(buf, sizeof(buf),
+        "{\"x\":%.2f,\"y\":%.2f,\"artery_dist\":%.2f,"
+        "\"jitter_ns\":%u,\"latency_us\":%u,\"state\":%d,"
+        "\"interventions\":%u,\"bomb\":%d}\n",
+        latest_state.safe_x, latest_state.safe_y,
+        latest_state.distance_to_artery, latest_state.scheduling_jitter_ns,
+        latest_state.loop_latency_us, latest_state.state,
+        latest_state.safety_interventions_count, latest_state.cpu_bomb_active);
+    pthread_mutex_unlock(&state_mutex);
+
+    if (ocb->offset >= len) {
+        _IO_SET_READ_NBYTES(ctp, 0);
+        return _RESMGR_NPARTS(0);
+    }
+
+    int nbytes = min(msg->i.nbytes, len - ocb->offset);
+    MsgReply(ctp->rcvid, nbytes, buf + ocb->offset, nbytes);
+    ocb->offset += nbytes;
+    return _RESMGR_NOREPLY;
+}
+
+/* Handle POSIX write() -> e.g., `echo "BOMB=1" > /dev/surgical_arm` or IPC update */
+int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
+    int status;
+    if ((status = iofunc_write_verify(ctp, msg, ocb, NULL)) != EOK) {
+        return status;
+    }
+
+    _IO_SET_WRITE_NBYTES(ctp, msg->i.nbytes);
+
+    if (msg->i.nbytes == sizeof(supervisor_reply_t)) {
+        pthread_mutex_lock(&state_mutex);
+        resmgr_msgread(ctp, &latest_state, sizeof(supervisor_reply_t), sizeof(msg->i));
+        pthread_mutex_unlock(&state_mutex);
+    } else {
+        char cmd[64] = {0};
+        int bytes = (msg->i.nbytes < 63) ? msg->i.nbytes : 63;
+        resmgr_msgread(ctp, cmd, bytes, sizeof(msg->i));
+        pthread_mutex_lock(&state_mutex);
+        if (strncmp(cmd, "BOMB=1", 6) == 0) {
+            latest_state.cpu_bomb_active = 1;
+        } else if (strncmp(cmd, "BOMB=0", 6) == 0) {
+            latest_state.cpu_bomb_active = 0;
+        }
+        pthread_mutex_unlock(&state_mutex);
+    }
+    return _RESMGR_NPARTS(0);
+}
+
+int main(int argc, char **argv) {
+    dispatch_t           *dpp;
+    resmgr_attr_t        resmgr_attr;
+    dispatch_context_t   *ctp;
+    int                  id;
+
+    /* Boost Resource Manager priority for deterministic response */
+    struct sched_param param;
+    param.sched_priority = 240;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+
+    if ((dpp = dispatch_create_channel(-1, DISPATCH_FLAG_NOLOCK)) == NULL) {
+        perror("dispatch_create_channel");
+        return EXIT_FAILURE;
+    }
+
+    memset(&resmgr_attr, 0, sizeof(resmgr_attr));
+    resmgr_attr.nparts_max = 1;
+    resmgr_attr.msg_max_size = 2048;
+
+    iofunc_func_init(_RESMGR_CONNECT_NFUNCS, &connect_funcs,
+                     _RESMGR_IO_NFUNCS, &io_funcs);
+    io_funcs.read  = io_read;
+    io_funcs.write = io_write;
+
+    iofunc_attr_init(&attr, S_IFNAM | 0666, 0, 0);
+
+    id = resmgr_attach(dpp, &resmgr_attr, SURGICAL_ARM_DEV_PATH, _FTYPE_ANY, 0,
+                       &connect_funcs, &io_funcs, &attr);
+    if (id == -1) {
+        perror("resmgr_attach");
+        return EXIT_FAILURE;
+    }
+
+    printf("[NeuroGuard] QNX 8.0 Resource Manager active at %s (SCHED_FIFO Prio 240)\n",
+           SURGICAL_ARM_DEV_PATH);
+
+    ctp = dispatch_context_alloc(dpp);
+    while (1) {
+        if ((ctp = dispatch_block(ctp)) == NULL) {
+            perror("dispatch_block");
+            return EXIT_FAILURE;
+        }
+        dispatch_handler(ctp);
+    }
+    return EXIT_SUCCESS;
+}
