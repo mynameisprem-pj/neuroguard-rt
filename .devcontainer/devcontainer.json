@@ -1,0 +1,19 @@
+{
+  "name": "NeuroGuard-RT QNX 8.0 Workspace",
+  "image": "mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+  "runArgs": [
+    "--privileged"
+  ],
+  "forwardPorts": [3000, 8000, 8080, 8081],
+  "portsAttributes": {
+    "3000": { "label": "NeuroGuard Surgical Cockpit (UI)", "onAutoForward": "notify" },
+    "8080": { "label": "QNX Real-Time Telemetry TCP", "onAutoForward": "silent" },
+    "8081": { "label": "WebSocket Proxy Bridge", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils bridge-utils iproute2 net-tools dnsmasq e2fsprogs dosfstools mtools fdisk gdisk python3-pip python3-websockets nodejs npm"
+}
