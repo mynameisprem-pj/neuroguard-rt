@@ -1,0 +1,67 @@
+[virtual=x86_64,multiboot] boot = {
+    startup-apic -v -D 8250.0x3f8.115200
+    PATH=/proc/boot:/bin:/usr/bin:/sbin:/usr/sbin LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll procnto-smp-instr -v
+}
+
+[+script] startup-script = {
+    procmgr_symlink ../../proc/boot/libc.so.6 /usr/lib/ldqnx-64.so.2
+    procmgr_symlink ../../proc/boot/libc.so.5 /usr/lib/ldqnx-64.so.2
+
+    devc-ser8250 -e -F -b115200 0x3f8,4 0x2f8,3 &
+    waitfor /dev/ser1
+    reopen /dev/ser1
+
+    slogger2 &
+    pipe &
+    devc-pty &
+
+    display_msg ""
+    display_msg "========================================================"
+    display_msg "  NEUROGUARD-RT : QNX 8.0 Hard Real-Time Surgical Cage  "
+    display_msg "  Kernel: procnto-smp-instr (x86_64 SMP Microkernel)    "
+    display_msg "========================================================"
+
+    display_msg "[1/4] Starting POSIX Resource Manager (/dev/surgical_arm)..."
+    /proc/boot/surgical_arm_resmgr &
+    waitfor /dev/surgical_arm 5
+
+    display_msg "[2/4] Starting SCHED_FIFO Prio-250 Safety Supervisor..."
+    /proc/boot/safety_supervisor &
+    waitfor /dev/name/local/neuroguard_supervisor 5
+
+    display_msg "[3/4] Starting AI Tremor MLP Engine & Fault Injector..."
+    /proc/boot/ai_tremor_engine &
+
+    display_msg "[4/4] Starting Real-Time Telemetry Streamer (/dev/ser2)..."
+    /proc/boot/ngctl stream &
+
+    display_msg "NeuroGuard RT Online! Commands: 'ngctl', 'ngctl bomb 1', 'ngctl bomb 0', 'pidin'"
+    [+session] ksh &
+}
+
+[type=link] /bin/sh=/proc/boot/ksh
+[type=link] /tmp=/dev/shmem
+
+# Core QNX 8.0 Shared Libraries
+libc.so
+libm.so
+libsocket.so
+libsecpol.so
+libslog2.so
+libgcc_s.so
+
+# Core QNX 8.0 System Services & Shell
+devc-ser8250
+devc-pty
+slogger2
+slog2info
+pipe
+ksh
+pidin
+
+# NeuroGuard-RT Custom QNX 8.0 Executables
+/proc/boot/surgical_arm_resmgr=/workspaces/neuroguard-rt/qnx-target/bin/surgical_arm_resmgr
+/proc/boot/safety_supervisor=/workspaces/neuroguard-rt/qnx-target/bin/safety_supervisor
+/proc/boot/ai_tremor_engine=/workspaces/neuroguard-rt/qnx-target/bin/ai_tremor_engine
+/proc/boot/telemetry_bridge=/workspaces/neuroguard-rt/qnx-target/bin/telemetry_bridge
+/proc/boot/ngctl=/workspaces/neuroguard-rt/qnx-target/bin/ngctl

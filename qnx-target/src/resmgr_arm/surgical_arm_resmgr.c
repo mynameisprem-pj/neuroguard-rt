@@ -13,10 +13,11 @@ static resmgr_io_funcs_t      io_funcs;
 static iofunc_attr_t          attr;
 
 static supervisor_reply_t latest_state = {
-    .safe_x = 50.0,
-    .safe_y = 50.0,
-    .distance_to_artery = 35.0,
-    .scheduling_jitter_ns = 840,
+    .raw_x = 74.0, .raw_y = 50.0,
+    .ai_x = 74.0,  .ai_y = 50.0,
+    .safe_x = 74.0, .safe_y = 50.0,
+    .distance_to_artery = 24.0,
+    .scheduling_jitter_ns = 1240,
     .loop_latency_us = 45,
     .state = STATE_NOMINAL_AI,
     .safety_interventions_count = 0,
@@ -37,10 +38,12 @@ int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
     char buf[512];
     pthread_mutex_lock(&state_mutex);
     int len = snprintf(buf, sizeof(buf),
-        "{\"x\":%.2f,\"y\":%.2f,\"artery_dist\":%.2f,"
-        "\"jitter_ns\":%u,\"latency_us\":%u,\"state\":%d,"
+        "{\"x\":%.2f,\"y\":%.2f,\"raw_x\":%.2f,\"raw_y\":%.2f,\"ai_x\":%.2f,\"ai_y\":%.2f,"
+        "\"artery_dist\":%.2f,\"jitter_ns\":%u,\"latency_us\":%u,\"state\":%d,"
         "\"interventions\":%u,\"bomb\":%d}\n",
         latest_state.safe_x, latest_state.safe_y,
+        latest_state.raw_x, latest_state.raw_y,
+        latest_state.ai_x, latest_state.ai_y,
         latest_state.distance_to_artery, latest_state.scheduling_jitter_ns,
         latest_state.loop_latency_us, latest_state.state,
         latest_state.safety_interventions_count, sticky_bomb_flag);
@@ -81,6 +84,10 @@ int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
         } else if (strstr(cmd, "BOMB=0") != NULL) {
             sticky_bomb_flag = 0;
             latest_state.cpu_bomb_active = 0;
+        } else if (strstr(cmd, "RESET") != NULL) {
+            sticky_bomb_flag = 0;
+            latest_state.cpu_bomb_active = 0;
+            latest_state.safety_interventions_count = 0;
         }
         pthread_mutex_unlock(&state_mutex);
     }

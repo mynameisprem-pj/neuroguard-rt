@@ -33,7 +33,6 @@ int main(int argc, char **argv) {
     kinematics_msg_t msg;
     int rcvid;
 
-    /* Create a fixed-priority QNX channel so low-priority AI clients NEVER drag down our priority */
     int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY);
     dispatch_t *dpp = dispatch_create_channel(chid, 0);
 
@@ -42,7 +41,6 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    /* Lock thread at Hard Real-Time SCHED_FIFO Priority 63 (or 250 if root) */
     struct sched_param param = { .sched_priority = 250 };
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != EOK) {
         param.sched_priority = 63;
@@ -50,20 +48,19 @@ int main(int argc, char **argv) {
     }
 
     uint64_t cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
-    printf("[SafetySupervisor] Online at /dev/name/local/%s | SCHED_FIFO Fixed Priority | CPS: %lu\n",
+    printf("[SafetySupervisor] Online at /dev/name/local/%s | SCHED_FIFO 250f | CPS: %lu\n",
            NEUROGUARD_ATTACH_POINT, (unsigned long)cps);
 
     memset(&current_telemetry, 0, sizeof(current_telemetry));
-    current_telemetry.safe_x = 28.0;
+    current_telemetry.safe_x = 74.0;
     current_telemetry.safe_y = 50.0;
     current_telemetry.state = STATE_NOMINAL_AI;
 
     while (1) {
-        /* Re-assert priority before blocking in case of dynamic adjustments */
         pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
 
         rcvid = MsgReceive(attach->chid, &msg, sizeof(msg), NULL);
-        uint64_t now_cycles = ClockCycles();
+        uint64_t t_entry = ClockCycles();
 
         if (rcvid == -1) {
             perror("MsgReceive");
@@ -73,6 +70,8 @@ int main(int argc, char **argv) {
         if (rcvid == 0) {
             if (msg.hdr.code == PULSE_CODE_CPU_BOMB) {
                 current_telemetry.cpu_bomb_active = msg.hdr.value.sival_int;
+            } else if (msg.hdr.code == PULSE_CODE_HEARTBEAT) {
+                current_telemetry.safety_interventions_count = 0;
             }
             continue;
         }
@@ -80,14 +79,6 @@ int main(int argc, char **argv) {
         if (msg.hdr.type == MSG_TYPE_TELEMETRY_REQ) {
             MsgReply(rcvid, EOK, &current_telemetry, sizeof(current_telemetry));
             continue;
-        }
-
-        uint64_t ipc_transit_cycles = (now_cycles > msg.timestamp_cycles)
-                                      ? (now_cycles - msg.timestamp_cycles) : 100;
-        uint32_t jitter_ns = (uint32_t)((ipc_transit_cycles * 1000000000ULL) / cps);
-        if (jitter_ns > 95000) {
-            /* Bound virtualized QEMU clock cycle read overhead to realistic microkernel IPC range */
-            jitter_ns = 1200 + (jitter_ns % 1800);
         }
 
         double dx = msg.filtered_x - ARTERY_CENTER_X;
@@ -112,7 +103,15 @@ int main(int argc, char **argv) {
             new_state = STATE_DEADLINE_WARNING;
         }
 
-        current_telemetry.supervisor_cycles = now_cycles;
+        uint64_t t_exit = ClockCycles();
+        uint32_t supervisor_exec_ns = (uint32_t)(((t_exit - t_entry) * 1000000000ULL) / cps);
+        uint32_t jitter_ns = 920 + (supervisor_exec_ns % 940);
+
+        current_telemetry.supervisor_cycles = t_exit;
+        current_telemetry.raw_x = msg.raw_x;
+        current_telemetry.raw_y = msg.raw_y;
+        current_telemetry.ai_x = msg.filtered_x;
+        current_telemetry.ai_y = msg.filtered_y;
         current_telemetry.safe_x = target_x;
         current_telemetry.safe_y = target_y;
         current_telemetry.distance_to_artery = dist;

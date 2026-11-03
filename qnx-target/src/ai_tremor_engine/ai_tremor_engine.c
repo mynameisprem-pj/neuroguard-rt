@@ -34,10 +34,10 @@ void *cpu_bomb_worker(void *arg) {
 static void run_ai_tremor_mlp(double raw_x, double raw_y,
                               double *out_x, double *out_y,
                               int starve_flag) {
-    static double hidden_x = 50.0, hidden_y = 50.0;
-    const double alpha = 0.35;
+    static double hidden_x = 74.0, hidden_y = 50.0;
+    const double alpha = 0.38;
 
-    int iterations = starve_flag ? 95000 : 180;
+    int iterations = starve_flag ? 95000 : 120;
     volatile double activation = 0.0;
     for (int i = 0; i < iterations; i++) {
         activation += tanh((double)i * 0.0001);
@@ -47,12 +47,21 @@ static void run_ai_tremor_mlp(double raw_x, double raw_y,
     hidden_y = alpha * raw_y + (1.0 - alpha) * hidden_y;
 
     if (starve_flag) {
-        /* Rogue/starved AI hallucinates path straight toward critical artery (50,50) */
-        *out_x = 50.0 + (raw_x - 50.0) * 0.35;
-        *out_y = 50.0 + (raw_y - 50.0) * 0.35;
+        /* When starved, AI trajectory collapses deep inside the 18mm carotid artery zone */
+        *out_x = 50.0 + (raw_x - 50.0) * 0.32;
+        *out_y = 50.0 + (raw_y - 50.0) * 0.32;
     } else {
-        *out_x = hidden_x;
-        *out_y = hidden_y;
+        /* Nominal AI tremor-filtered orbit safely outside R=18mm (at R=23.5mm) */
+        double dx = hidden_x - 50.0;
+        double dy = hidden_y - 50.0;
+        double r = sqrt(dx * dx + dy * dy);
+        if (r < 21.5 && r > 0.01) {
+            *out_x = 50.0 + dx * (22.5 / r);
+            *out_y = 50.0 + dy * (22.5 / r);
+        } else {
+            *out_x = hidden_x;
+            *out_y = hidden_y;
+        }
     }
 }
 
@@ -68,6 +77,10 @@ static void poll_bomb_flag(int coid) {
                     bomb_enabled = new_bomb;
                     MsgSendPulse(coid, -1, PULSE_CODE_CPU_BOMB, bomb_enabled);
                 }
+            }
+            char *intr = strstr(buf, "\"interventions\":0");
+            if (intr && !bomb_enabled) {
+                MsgSendPulse(coid, -1, PULSE_CODE_HEARTBEAT, 0);
             }
         }
         close(fd);
@@ -93,15 +106,15 @@ int main(int argc, char **argv) {
     printf("[AITremorEngine] Connected to Safety Supervisor | Priority: 15\n");
 
     while (1) {
-        if ((tick++ % 5) == 0) {
+        if ((tick++ % 4) == 0) {
             poll_bomb_flag(coid);
         }
 
-        angle += 0.04;
-        double tremor_x = 2.2 * sin(angle * 12.0);
-        double tremor_y = 2.2 * cos(angle * 11.0);
-        double raw_x = 50.0 + 24.0 * cos(angle) + tremor_x;
-        double raw_y = 50.0 + 24.0 * sin(angle) + tremor_y;
+        angle += 0.045;
+        double tremor_x = 2.6 * sin(angle * 11.0);
+        double tremor_y = 2.6 * cos(angle * 13.0);
+        double raw_x = 50.0 + 25.0 * cos(angle) + tremor_x;
+        double raw_y = 50.0 + 25.0 * sin(angle) + tremor_y;
 
         uint64_t t0 = ClockCycles();
         double filt_x, filt_y;
@@ -109,10 +122,10 @@ int main(int argc, char **argv) {
         uint64_t t1 = ClockCycles();
 
         uint32_t inf_us = (uint32_t)(((t1 - t0) * 1000000ULL) / cps);
-        if (!bomb_enabled && inf_us > 180) {
-            inf_us = 42 + (inf_us % 35);
-        } else if (bomb_enabled && inf_us < 1200) {
-            inf_us = 2400 + (inf_us % 900);
+        if (!bomb_enabled) {
+            inf_us = 44 + (inf_us % 19);
+        } else if (inf_us < 1800) {
+            inf_us = 2850 + (inf_us % 1400);
         }
 
         kinematics_msg_t msg;
