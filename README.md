@@ -1,3 +1,5 @@
+📘 **[Read the Step-by-Step QNX 8.0 Developer Codelab & Tutorial (`CODELAB.md`)](./CODELAB.md)**
+
 # NeuroGuard-RT: Deterministic QNX 8.0 Safety Cage for AI-Assisted Robotic Microsurgery
 
 [![Target OS](https://img.shields.io/badge/Target_RTOS-QNX_SDP_8.0_(procnto--smp--instr)-0096D6?style=for-the-badge)](https://blackberry.qnx.com/)
