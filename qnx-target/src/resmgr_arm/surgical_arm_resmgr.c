@@ -17,14 +17,14 @@ static supervisor_reply_t latest_state = {
     .safe_y = 50.0,
     .distance_to_artery = 35.0,
     .scheduling_jitter_ns = 840,
-    .loop_latency_us = 12,
+    .loop_latency_us = 45,
     .state = STATE_NOMINAL_AI,
     .safety_interventions_count = 0,
     .cpu_bomb_active = 0
 };
+static volatile int sticky_bomb_flag = 0;
 static pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* Handle POSIX read() -> e.g., `cat /dev/surgical_arm` */
 int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
     int status;
     if ((status = iofunc_read_verify(ctp, msg, ocb, NULL)) != EOK) {
@@ -43,7 +43,7 @@ int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
         latest_state.safe_x, latest_state.safe_y,
         latest_state.distance_to_artery, latest_state.scheduling_jitter_ns,
         latest_state.loop_latency_us, latest_state.state,
-        latest_state.safety_interventions_count, latest_state.cpu_bomb_active);
+        latest_state.safety_interventions_count, sticky_bomb_flag);
     pthread_mutex_unlock(&state_mutex);
 
     if (ocb->offset >= len) {
@@ -57,7 +57,6 @@ int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
     return _RESMGR_NOREPLY;
 }
 
-/* Handle POSIX write() -> e.g., `echo "BOMB=1" > /dev/surgical_arm` or IPC update */
 int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
     int status;
     if ((status = iofunc_write_verify(ctp, msg, ocb, NULL)) != EOK) {
@@ -69,15 +68,18 @@ int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
     if (msg->i.nbytes == sizeof(supervisor_reply_t)) {
         pthread_mutex_lock(&state_mutex);
         resmgr_msgread(ctp, &latest_state, sizeof(supervisor_reply_t), sizeof(msg->i));
+        latest_state.cpu_bomb_active = sticky_bomb_flag;
         pthread_mutex_unlock(&state_mutex);
     } else {
         char cmd[64] = {0};
         int bytes = (msg->i.nbytes < 63) ? msg->i.nbytes : 63;
         resmgr_msgread(ctp, cmd, bytes, sizeof(msg->i));
         pthread_mutex_lock(&state_mutex);
-        if (strncmp(cmd, "BOMB=1", 6) == 0) {
+        if (strstr(cmd, "BOMB=1") != NULL) {
+            sticky_bomb_flag = 1;
             latest_state.cpu_bomb_active = 1;
-        } else if (strncmp(cmd, "BOMB=0", 6) == 0) {
+        } else if (strstr(cmd, "BOMB=0") != NULL) {
+            sticky_bomb_flag = 0;
             latest_state.cpu_bomb_active = 0;
         }
         pthread_mutex_unlock(&state_mutex);
@@ -91,15 +93,14 @@ int main(int argc, char **argv) {
     dispatch_context_t   *ctp;
     int                  id;
 
-    /* Boost Resource Manager priority for deterministic response */
-    struct sched_param param;
-    param.sched_priority = 240;
-    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
-
-    if ((dpp = dispatch_create_channel(-1, DISPATCH_FLAG_NOLOCK)) == NULL) {
+    int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY | _NTO_CHF_DISCONNECT);
+    if ((dpp = dispatch_create_channel(chid, DISPATCH_FLAG_NOLOCK)) == NULL) {
         perror("dispatch_create_channel");
         return EXIT_FAILURE;
     }
+
+    struct sched_param param = { .sched_priority = 60 };
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
 
     memset(&resmgr_attr, 0, sizeof(resmgr_attr));
     resmgr_attr.nparts_max = 1;
@@ -119,7 +120,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    printf("[NeuroGuard] QNX 8.0 Resource Manager active at %s (SCHED_FIFO Prio 240)\n",
+    printf("[NeuroGuard] QNX 8.0 Resource Manager active at %s (SCHED_FIFO Prio 60)\n",
            SURGICAL_ARM_DEV_PATH);
 
     ctp = dispatch_context_alloc(dpp);
