@@ -1,8 +1,7 @@
 # Codelab: Building a Hard Real-Time AI Safety Cage on QNX SDP 8.0 in GitHub Codespaces (Zero Hardware Required)
-
-**Duration:** 25 Minutes  
+ 
 **Target OS:** QNX SDP 8.0 (`procnto-smp-instr` x86_64) on QEMU  
-**Author:** NeuroGuard-RT Engineering Team  
+**Author:** Prem Jha
 
 ### Key QNX 8.0 Technologies Covered
 1. **POSIX Device Resource Managers (`resmgr_attach`, `iofunc_func_init`)**
