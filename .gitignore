@@ -1,2 +1,15 @@
+# QNX Build & VM Artifacts
 qnx-target/bin/
 qnx-target/vm/
+qnx-target/ifs/*.ifs
+qnx-target/ifs/*.img
+qnx-target/surgical_arm_resmgr
+
+# Runtime Logs & PIDs
+*.log
+*.pid
+__pycache__/
+
+# Editor & OS clutter
+.vscode/
+.DS_Store
