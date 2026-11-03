@@ -9,8 +9,10 @@
 #define NEUROGUARD_ATTACH_POINT "neuroguard_supervisor"
 #define SURGICAL_ARM_DEV_PATH   "/dev/surgical_arm"
 
+/* QNX Native Kernel Pulse & IPC Message Codes */
 #define PULSE_CODE_HEARTBEAT    (_PULSE_CODE_MINAVAIL + 1)
 #define PULSE_CODE_CPU_BOMB     (_PULSE_CODE_MINAVAIL + 2)
+#define PULSE_CODE_RT_TIMER     (_PULSE_CODE_MINAVAIL + 3)
 #define MSG_TYPE_KINEMATICS     (_IO_MAX + 10)
 #define MSG_TYPE_TELEMETRY_REQ  (_IO_MAX + 11)
 
@@ -44,6 +46,9 @@ typedef struct {
     system_safety_state_t state;
     uint32_t safety_interventions_count;
     int cpu_bomb_active;
+    int manual_override_active;
+    double manual_target_x;
+    double manual_target_y;
 } supervisor_reply_t;
 
 #endif /* NEUROGUARD_IPC_H */
