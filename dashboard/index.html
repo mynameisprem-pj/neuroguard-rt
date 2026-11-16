@@ -4,448 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QNX Surgical Robotics Cockpit — Real-Time Safety System</title>
-  <style>
-    :root {
-      --bg-void: #040810;
-      --bg-panel: #09111e;
-      --bg-panel-alt: #0c1728;
-      --border-dim: #162a45;
-      --border-cyan: #0ea5e9;
-      --cyan: #22d3ee;
-      --cyan-soft: rgba(34, 211, 238, 0.16);
-      --green: #22c55e;
-      --green-bright: #4ade80;
-      --red: #ef4444;
-      --red-bright: #f87171;
-      --red-glow: rgba(239, 68, 68, 0.25);
-      --amber: #fbbf24;
-      --text-main: #e2e8f0;
-      --text-muted: #7c93b0;
-      --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", monospace;
-      --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: radial-gradient(circle at 25% 20%, #0b192c 0%, var(--bg-void) 70%);
-      color: var(--text-main);
-      font-family: var(--sans);
-      height: 100vh;
-      width: 100vw;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      padding: 12px 16px 8px;
-      gap: 10px;
-      user-select: none;
-    }
-
-    /* TOP HEADER BAR */
-    .topbar {
-      display: grid;
-      grid-template-columns: 1.1fr 1.6fr 0.9fr;
-      gap: 12px;
-      align-items: stretch;
-      min-height: 62px;
-    }
-
-    .brand-box {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-dim);
-      border-radius: 10px;
-      padding: 8px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .hex-logo {
-      width: 38px;
-      height: 38px;
-      flex-shrink: 0;
-    }
-
-    .brand-title {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: #f8fafc;
-    }
-
-    .brand-sub {
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      color: var(--cyan);
-      margin-top: 2px;
-    }
-
-    .status-banner {
-      background: rgba(16, 185, 129, 0.09);
-      border: 1px solid rgba(34, 197, 94, 0.55);
-      border-radius: 10px;
-      padding: 8px 18px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: all 0.14s ease;
-    }
-
-    .status-banner.clamped {
-      background: linear-gradient(90deg, rgba(127, 29, 29, 0.55), rgba(69, 10, 10, 0.45));
-      border: 1.5px solid var(--red);
-      box-shadow: 0 0 24px var(--red-glow);
-    }
-
-    .banner-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .banner-headline {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: 0.05em;
-      color: var(--green-bright);
-    }
-
-    .status-banner.clamped .banner-headline {
-      color: var(--red-bright);
-    }
-
-    .banner-sub {
-      font-size: 11px;
-      letter-spacing: 0.09em;
-      color: #86efac;
-      margin-top: 2px;
-    }
-
-    .status-banner.clamped .banner-sub {
-      color: #fca5a5;
-    }
-
-    .banner-meta {
-      text-align: right;
-      font-family: var(--mono);
-      font-size: 11.5px;
-      line-height: 1.55;
-      color: var(--text-muted);
-    }
-
-    .sys-box {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-dim);
-      border-radius: 10px;
-      padding: 8px 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: flex-end;
-      font-family: var(--mono);
-      font-size: 12px;
-      gap: 4px;
-    }
-
-    .dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green-bright);
-      box-shadow: 0 0 8px var(--green-bright);
-      margin-right: 6px;
-    }
-
-    /* MAIN 2-COLUMN COCKPIT GRID */
-    .main-grid {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 1.02fr 1.08fr;
-      gap: 12px;
-    }
-
-    .panel {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-dim);
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .panel.workspace-clamped {
-      border-color: var(--red);
-      box-shadow: inset 0 0 28px rgba(239, 68, 68, 0.16), 0 0 18px rgba(239, 68, 68, 0.2);
-    }
-
-    .panel-hdr {
-      padding: 9px 14px;
-      border-bottom: 1px solid var(--border-dim);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12.5px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: var(--cyan);
-      background: rgba(12, 23, 40, 0.65);
-    }
-
-    /* LEFT WORKSPACE */
-    .workspace-body {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(circle at center, #081322 0%, #03070e 85%);
-    }
-
-    #ws-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    .clamp-badge {
-      position: absolute;
-      left: 16px;
-      bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: rgba(6, 12, 22, 0.86);
-      border: 1px solid var(--border-dim);
-      pointer-events: none;
-    }
-
-    .clamp-badge.active {
-      border-color: rgba(239, 68, 68, 0.7);
-      background: rgba(69, 10, 10, 0.72);
-    }
-
-    .scale-ruler {
-      position: absolute;
-      right: 18px;
-      bottom: 14px;
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    /* RIGHT STACK */
-    .right-stack {
-      display: grid;
-      grid-template-rows: auto 1fr auto auto;
-      gap: 9px;
-      min-height: 0;
-    }
-
-    .metrics-list {
-      padding: 6px 14px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .metric-row {
-      display: grid;
-      grid-template-columns: 1.3fr 1.1fr 1fr;
-      align-items: center;
-      padding: 6px 0;
-      border-bottom: 1px solid rgba(22, 42, 69, 0.7);
-      font-size: 13px;
-    }
-
-    .metric-row:last-child { border-bottom: none; }
-
-    .m-label { color: #cbd5e1; font-weight: 500; }
-    .m-val { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--cyan); }
-    .m-val.green { color: var(--green-bright); }
-    .m-val.red { color: var(--red-bright); }
-    .m-right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); }
-
-    .mini-reset-btn {
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.45);
-      color: var(--red-bright);
-      font-family: var(--mono);
-      font-size: 10.5px;
-      padding: 3px 8px;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    .mini-reset-btn:hover { background: rgba(239, 68, 68, 0.25); }
-
-    /* OSCILLOSCOPE */
-    .osc-wrap {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 1fr 148px;
-      gap: 10px;
-      padding: 8px 12px;
-      align-items: stretch;
-    }
-
-    #osc-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      background: #050b14;
-      border: 1px solid #12243b;
-      border-radius: 6px;
-    }
-
-    .osc-stats {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      font-family: var(--mono);
-      padding: 2px 4px;
-    }
-
-    .osc-stat-lbl { font-size: 10px; color: var(--text-muted); letter-spacing: 0.06em; }
-    .osc-stat-num { font-size: 17px; font-weight: 700; color: #f8fafc; margin-top: 2px; }
-
-    /* PROCESS TABLE */
-    .proc-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-family: var(--mono);
-      font-size: 11.5px;
-    }
-    .proc-table th {
-      text-align: left;
-      padding: 5px 12px;
-      color: var(--text-muted);
-      font-size: 10px;
-      border-bottom: 1px solid var(--border-dim);
-    }
-    .proc-table td {
-      padding: 5px 12px;
-      border-bottom: 1px solid rgba(22, 42, 69, 0.45);
-    }
-    .proc-row-sup.clamped {
-      background: rgba(239, 68, 68, 0.16);
-      color: #fecaca;
-    }
-
-    /* FAULT CONTROLS */
-    .controls-bar {
-      display: grid;
-      grid-template-columns: 1.15fr 1.15fr 0.9fr;
-      gap: 10px;
-    }
-
-    .ctrl-btn {
-      border-radius: 8px;
-      padding: 9px 12px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      font-family: var(--sans);
-      transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
-      text-align: left;
-    }
-    .ctrl-btn:active { transform: scale(0.985); }
-
-    .btn-fault-red {
-      background: rgba(127, 29, 29, 0.35);
-      border: 1.5px solid var(--red);
-      color: #fecaca;
-    }
-    .btn-fault-red:hover, .btn-fault-red.active {
-      background: rgba(185, 28, 28, 0.55);
-      box-shadow: 0 0 18px var(--red-glow);
-    }
-
-    .btn-fault-amber {
-      background: rgba(120, 53, 15, 0.32);
-      border: 1.5px solid var(--amber);
-      color: #fde68a;
-    }
-    .btn-fault-amber:hover, .btn-fault-amber.active {
-      background: rgba(180, 83, 9, 0.5);
-      box-shadow: 0 0 16px rgba(251, 191, 36, 0.25);
-    }
-
-    .btn-reset-green {
-      background: rgba(20, 83, 45, 0.38);
-      border: 1.5px solid var(--green);
-      color: #bbf7d0;
-    }
-    .btn-reset-green:hover {
-      background: rgba(22, 101, 52, 0.6);
-      box-shadow: 0 0 16px rgba(34, 197, 94, 0.25);
-    }
-
-    .btn-title { font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; display: block; }
-    .btn-sub { font-size: 9.5px; opacity: 0.85; letter-spacing: 0.06em; font-family: var(--mono); display: block; margin-top: 1px; }
-
-    /* BOTTOM 5-CARD TELEMETRY BAR */
-    .bottom-strip {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-dim);
-      border-radius: 10px;
-      padding: 8px 14px;
-    }
-
-    .b-card {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      border-right: 1px solid var(--border-dim);
-      padding-right: 10px;
-    }
-    .b-card:last-child { border-right: none; padding-right: 0; }
-
-    .b-icon {
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      background: rgba(14, 165, 233, 0.1);
-      border: 1px solid rgba(34, 211, 238, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--cyan);
-      font-family: var(--mono);
-      font-weight: 700;
-      font-size: 15px;
-      flex-shrink: 0;
-    }
-
-    .b-lbl { font-size: 10px; color: var(--text-muted); letter-spacing: 0.07em; font-weight: 600; }
-    .b-num { font-family: var(--mono); font-size: 20px; font-weight: 800; color: var(--cyan); line-height: 1.15; margin: 1px 0; }
-    .b-sub { font-size: 10px; font-family: var(--mono); color: var(--text-muted); letter-spacing: 0.05em; }
-
-    .footer-line {
-      text-align: center;
-      font-family: var(--mono);
-      font-size: 10px;
-      letter-spacing: 0.12em;
-      color: #526985;
-    }
-  </style>
+  <link rel="stylesheet" href="css/cockpit.css" />
+  <script type="module" src="js/app.js"></script>
 </head>
 <body>
 
   <!-- TOP STATUS & SAFETY CAGE HEADER -->
   <header class="topbar">
     <div class="brand-box">
-      <svg class="hex-logo" viewBox="0 0 40 40" fill="none">
+      <svg class="hex-logo" viewBox="0 0 40 40" fill="none" aria-hidden="true">
         <polygon points="20,2 36,11 36,29 20,38 4,29 4,11" stroke="#22d3ee" stroke-width="2.2" fill="rgba(34,211,238,0.1)" />
         <circle cx="20" cy="20" r="6" stroke="#4ade80" stroke-width="2" />
         <line x1="20" y1="6" x2="20" y2="14" stroke="#22d3ee" stroke-width="1.6" />
@@ -459,21 +26,21 @@
 
     <div id="top-banner" class="status-banner">
       <div class="banner-left">
-        <span id="banner-icon" style="font-size:24px;">🛡️</span>
+        <span id="banner-icon" class="banner-icon">🛡️</span>
         <div>
           <div id="banner-headline" class="banner-headline">NORMAL — AI TREMOR FILTER INSIDE SAFE ZONE</div>
           <div id="banner-sub" class="banner-sub">1kHz WATCHDOG NOMINAL • BOUNDARY ENVELOPE R ≤ 18.00 mm</div>
         </div>
       </div>
       <div class="banner-meta">
-        <div>SYSTEM MODE: <strong id="meta-mode" style="color:#4ade80;">NORMAL</strong></div>
-        <div>SAFETY ENVELOPE: <strong style="color:#22d3ee;">ACTIVE</strong></div>
+        <div>SYSTEM MODE: <strong id="meta-mode" class="text-green">NORMAL</strong></div>
+        <div>SAFETY ENVELOPE: <strong class="text-cyan">ACTIVE</strong></div>
       </div>
     </div>
 
     <div class="sys-box">
-      <div style="color:#cbd5e1;"><span id="src-label">QNX SDP v8.0</span> &nbsp;|&nbsp; UPTIME <span id="uptime-txt">00:00:00</span></div>
-      <div style="color:#4ade80;font-weight:700;"><span class="dot"></span>RT SAFETY CORE (250f FIFO)</div>
+      <div class="sys-uptime"><span id="src-label">QNX SDP v8.0</span> &nbsp;|&nbsp; UPTIME <span id="uptime-txt">00:00:00</span></div>
+      <div class="sys-core"><span class="dot"></span>RT SAFETY CORE (250f FIFO)</div>
     </div>
   </header>
 
@@ -484,22 +51,22 @@
     <section id="ws-panel" class="panel">
       <div class="panel-hdr">
         <span>⊕ REAL-TIME SURGICAL WORKSPACE (SAFE BOUNDARY R = 18.00 mm)</span>
-        <span style="color:#4ade80;font-family:var(--mono);font-size:11.5px;"><span class="dot"></span>LIVE 30Hz</span>
+        <span class="live-pill"><span class="dot"></span>LIVE 30Hz</span>
       </div>
       <div class="workspace-body">
         <canvas id="ws-canvas"></canvas>
 
         <div id="clamp-badge" class="clamp-badge">
-          <span id="clamp-badge-icon" style="font-size:20px;">🛡️</span>
+          <span id="clamp-badge-icon" class="badge-icon">🛡️</span>
           <div>
-            <div id="clamp-badge-title" style="font-size:12px;font-weight:800;color:#4ade80;letter-spacing:0.05em;">SAFE ENVELOPE MONITORED</div>
-            <div id="clamp-badge-sub" style="font-size:10px;font-family:var(--mono);color:#94a3b8;">AI DECISION LAYER: (<span id="ai-xy-txt">11.2, 0.0</span>) mm</div>
+            <div id="clamp-badge-title" class="badge-title">SAFE ENVELOPE MONITORED</div>
+            <div id="clamp-badge-sub" class="badge-sub">AI DECISION LAYER: (11.2, 0.0) mm</div>
           </div>
         </div>
 
         <div class="scale-ruler">
-          <div style="border-bottom:1.5px solid #64748b;border-left:1.5px solid #64748b;border-right:1.5px solid #64748b;height:6px;width:110px;margin-bottom:3px;"></div>
-          <div style="display:flex;justify-content:space-between;width:110px;"><span>0.00</span><span>18.00 mm</span></div>
+          <div class="ruler-bar"></div>
+          <div class="ruler-labels"><span>0.00</span><span>18.00 mm</span></div>
         </div>
       </div>
     </section>
@@ -511,7 +78,7 @@
       <section class="panel">
         <div class="panel-hdr">
           <span>∿ LIVE METRICS (HARDWARE CLOCKCYCLES)</span>
-          <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">DEADLINE: 2,500 µs</span>
+          <span class="hdr-meta">DEADLINE: 2,500 µs</span>
         </div>
         <div class="metrics-list">
           <div class="metric-row">
@@ -521,29 +88,29 @@
           </div>
           <div class="metric-row">
             <span class="m-label">Supervisor Reaction (Latest / p99)</span>
-            <span id="m-react" class="m-val green">1.44 µs <small style="font-size:12px;color:#94a3b8;">/ 1.84 µs</small></span>
+            <span id="m-react" class="m-val green">1.44 µs <small class="m-subval">/ p99: 1.84 µs</small></span>
             <div class="m-right"><canvas id="spark-sup" width="90" height="22"></canvas><span>(&lt;2.0 µs)</span></div>
           </div>
           <div class="metric-row">
             <span class="m-label">Missed Deadlines / Clamp Trips</span>
-            <span id="m-missed" class="m-val">0</span>
+            <span id="m-missed" class="m-val green">0</span>
             <div class="m-right">
-              <button class="mini-reset-btn" onclick="sendCtrl('RESET')">RESET COUNTER ↻</button>
+              <button id="btn-mini-reset" type="button" class="mini-reset-btn">RESET COUNTER ↻</button>
             </div>
           </div>
           <div class="metric-row">
             <span class="m-label">Active QNX Ceiling Priority</span>
-            <span class="m-val" style="color:#f8fafc;">250f <small style="font-size:11px;color:#38bdf8;">SCHED_FIFO</small></span>
-            <div class="m-right" style="color:#4ade80;">SAFETY SUPERVISOR ●</div>
+            <span class="m-val text-light">250f <small class="sched-tag">SCHED_FIFO</small></span>
+            <div class="m-right text-green">SAFETY SUPERVISOR ●</div>
           </div>
         </div>
       </section>
 
       <!-- 2. REAL-TIME JITTER OSCILLOSCOPE -->
-      <section class="panel" style="min-height:0;">
+      <section class="panel osc-panel">
         <div class="panel-hdr">
           <span>∿ REAL-TIME JITTER OSCILLOSCOPE (QNX 250f WATCHDOG)</span>
-          <span style="font-family:var(--mono);font-size:11px;color:#4ade80;">_NTO_CHF_FIXED_PRIORITY</span>
+          <span class="hdr-meta text-green">_NTO_CHF_FIXED_PRIORITY</span>
         </div>
         <div class="osc-wrap">
           <canvas id="osc-canvas"></canvas>
@@ -554,9 +121,9 @@
             </div>
             <div>
               <div class="osc-stat-lbl">RMS JITTER</div>
-              <div id="osc-rms" class="osc-stat-num" style="color:#22d3ee;">0.23 µs</div>
+              <div id="osc-rms" class="osc-stat-num text-cyan">0.23 µs</div>
             </div>
-            <div style="font-size:11px;color:#4ade80;font-weight:700;">SYNC: HARDWARE</div>
+            <div class="osc-sync">SYNC: HARDWARE</div>
           </div>
         </div>
       </section>
@@ -565,7 +132,7 @@
       <section class="panel">
         <div class="panel-hdr">
           <span>∿ LIVE QNX 8.0 MICROKERNEL PROCESS TABLE</span>
-          <span style="font-family:var(--mono);font-size:10.5px;color:var(--text-muted);">procnto-smp-instr x86_64</span>
+          <span class="hdr-meta">procnto-smp-instr x86_64</span>
         </div>
         <table class="proc-table">
           <thead>
@@ -574,29 +141,29 @@
           <tbody>
             <tr id="row-sup" class="proc-row-sup">
               <td id="pid-sup">294931</td>
-              <td style="font-weight:700;">safety_supervisor</td>
-              <td style="color:#4ade80;font-weight:700;">250f (FIFO)</td>
-              <td id="st-sup" style="color:#4ade80;font-weight:700;">RECEIVE</td>
+              <td class="fw-bold">safety_supervisor</td>
+              <td class="text-green fw-bold">250f (FIFO)</td>
+              <td id="st-sup" class="text-green fw-bold">RECEIVE</td>
               <td>Hard Safety Cage</td>
             </tr>
             <tr>
               <td id="pid-resmgr">282642</td>
               <td>surgical_arm_resmgr</td>
-              <td style="color:#38bdf8;">60f (FIFO)</td>
+              <td class="text-sky">60f (FIFO)</td>
               <td>RECEIVE</td>
               <td>/dev/surgical_arm</td>
             </tr>
             <tr id="row-ai">
               <td id="pid-ai">307220</td>
               <td>ai_tremor_engine</td>
-              <td style="color:#fbbf24;">20r (RR)</td>
-              <td id="st-ai">READY</td>
+              <td class="text-amber">20r (RR)</td>
+              <td id="st-ai">READY (1kHz)</td>
               <td>Untrusted Elman MLP</td>
             </tr>
             <tr>
               <td>319509</td>
               <td>telemetry_bridge</td>
-              <td style="color:#94a3b8;">12r (RR)</td>
+              <td class="text-slate">12r (RR)</td>
               <td>NANOSLEEP</td>
               <td>io-sock TCP :8080</td>
             </tr>
@@ -606,24 +173,24 @@
 
       <!-- 4. FAULT INJECTION & RESET CONTROLS -->
       <div class="controls-bar">
-        <button id="btn-starve" class="ctrl-btn btn-fault-red" onclick="sendCtrl('STARVE=1')">
-          <span style="font-size:20px;">⚠️</span>
+        <button id="btn-starve" type="button" class="ctrl-btn btn-fault-red">
+          <span class="btn-emoji">⚠️</span>
           <span>
             <span class="btn-title">STARVE AI THREAD [S]</span>
             <span class="btn-sub">PRIO-35r CPU HOG • TIMEOUT</span>
           </span>
         </button>
 
-        <button id="btn-unsafe" class="ctrl-btn btn-fault-amber" onclick="sendCtrl('UNSAFE=1')">
-          <span style="font-size:20px;">⚡</span>
+        <button id="btn-unsafe" type="button" class="ctrl-btn btn-fault-amber">
+          <span class="btn-emoji">⚡</span>
           <span>
             <span class="btn-title">FORCE UNSAFE AI [U]</span>
             <span class="btn-sub">COMMAND R = 25.4 mm BREACH</span>
           </span>
         </button>
 
-        <button id="btn-reset" class="ctrl-btn btn-reset-green" onclick="sendCtrl('RESET')">
-          <span style="font-size:20px;">↻</span>
+        <button id="btn-reset" type="button" class="ctrl-btn btn-reset-green">
+          <span class="btn-emoji">↻</span>
           <span>
             <span class="btn-title">RESET CAGE [R]</span>
             <span class="btn-sub">CLEAR FAULT STATE</span>
@@ -640,7 +207,7 @@
       <div class="b-icon">⊕</div>
       <div>
         <div class="b-lbl">TOOL POSITION</div>
-        <div class="b-num"><span id="b-radius">11.20</span> <small style="font-size:13px;">mm</small></div>
+        <div class="b-num"><span id="b-radius">11.20</span> <small>mm</small></div>
         <div id="b-radius-sub" class="b-sub">RADIUS FROM CENTER</div>
       </div>
     </div>
@@ -649,17 +216,17 @@
       <div class="b-icon">🛡️</div>
       <div>
         <div class="b-lbl">BOUNDARY CLEARANCE</div>
-        <div class="b-num"><span id="b-offset">6.80</span> <small style="font-size:13px;">mm</small></div>
+        <div class="b-num"><span id="b-offset">6.80</span> <small>mm</small></div>
         <div id="b-offset-sub" class="b-sub">OFFSET FROM R=18.00</div>
       </div>
     </div>
 
     <div class="b-card">
-      <div class="b-icon" style="color:#4ade80;border-color:rgba(74,222,128,0.35);">∿</div>
+      <div class="b-icon b-icon-green">∿</div>
       <div>
         <div class="b-lbl">SCALPEL TIP FORCE</div>
-        <div class="b-num" style="color:#4ade80;"><span id="b-force">0.12</span> <small style="font-size:13px;">N</small></div>
-        <div id="b-force-sub" class="b-sub" style="color:#4ade80;">SAFE CONTACT</div>
+        <div class="b-num text-green"><span id="b-force">0.12</span> <small>N</small></div>
+        <div id="b-force-sub" class="b-sub text-green">SAFE TISSUE CONTACT</div>
       </div>
     </div>
 
@@ -667,400 +234,24 @@
       <div class="b-icon">♡</div>
       <div>
         <div class="b-lbl">AI HEARTBEAT AGE</div>
-        <div id="b-hb-wrap" class="b-num"><span id="b-hb">0.80</span> <small style="font-size:13px;">ms</small></div>
+        <div id="b-hb-wrap" class="b-num"><span id="b-hb">0.80</span> <small>ms</small></div>
         <div id="b-hb-sub" class="b-sub">WATCHDOG LIMIT: 2.5 ms</div>
       </div>
     </div>
 
     <div class="b-card">
-      <div class="b-icon" style="color:#4ade80;border-color:rgba(74,222,128,0.35);">✔</div>
+      <div class="b-icon b-icon-green">✔</div>
       <div>
         <div class="b-lbl">SAFETY CAGE INTEGRITY</div>
-        <div class="b-num" style="color:#4ade80;">100%</div>
+        <div class="b-num text-green">100%</div>
         <div id="b-int-sub" class="b-sub">ZERO BOUNDARY BREACHES</div>
       </div>
     </div>
   </section>
 
-  <div class="footer-line">
+  <footer class="footer-line">
     QNX SDP 8.0 REAL-TIME SAFETY SYSTEM &nbsp;|&nbsp; IEC 62304 / ISO 61508 DETERMINISTIC SUPERVISOR ARCHITECTURE &nbsp;|&nbsp; SHORTCUTS: [S] STARVE AI • [U] UNSAFE AI • [R] RESET
-  </div>
+  </footer>
 
-  <script>
-    const SAFE_R_MM = 18.00;
-    const VIEW_EXTENT_MM = 27.5; // Fits R=18mm ring cleanly + shows rogue R=25.4mm AI excursions outside
-
-    const trailSafe = [];
-    const oscHistory = new Array(110).fill(0.0);
-    const sparkAiHist = new Array(40).fill(12.3);
-    const sparkSupHist = new Array(40).fill(1.45);
-
-    let latest = {
-      state: 0, fault_mode: 0, fault_reason: 0,
-      raw_x: 11.2, raw_y: 0, ai_x: 11.2, ai_y: 0, x: 11.2, y: 0,
-      radius_mm: 11.2, offset_mm: 6.8, tip_force_n: 0.12,
-      ai_latency_us: 12.3, reaction_us: 1.44, p99_reaction_us: 1.84,
-      osc_sample_us: 0.08, p2p_jitter_us: 1.37, rms_jitter_us: 0.23,
-      heartbeat_age_ms: 0.8, missed_deadlines: 0,
-      sup_pid: 294931, ai_pid: 307220, resmgr_pid: 282642, uptime_s: 0, qnx_live: false
-    };
-
-    async function sendCtrl(cmd) {
-      try {
-        await fetch('/api/fault', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmd })
-        });
-      } catch (e) {}
-    }
-
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 's' || e.key === 'S') sendCtrl('STARVE=1');
-      if (e.key === 'u' || e.key === 'U') sendCtrl('UNSAFE=1');
-      if (e.key === 'r' || e.key === 'R') sendCtrl('RESET');
-    });
-
-    function fmtUptime(sec) {
-      const h = String(Math.floor(sec / 3600)).padStart(2, '0');
-      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
-      const s = String(sec % 60).padStart(2, '0');
-      return `${h}:${m}:${s}`;
-    }
-
-    function drawSparkline(canvasId, arr, color, minV, maxV) {
-      const c = document.getElementById(canvasId);
-      const ctx = c.getContext('2d');
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      for (let i = 0; i < arr.length; i++) {
-        const xp = (i / (arr.length - 1)) * c.width;
-        const norm = Math.max(0, Math.min(1, (arr[i] - minV) / (maxV - minV)));
-        const yp = c.height - 3 - norm * (c.height - 6);
-        if (i === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
-      }
-      ctx.stroke();
-    }
-
-    function updateDOM(d) {
-      const clamped = (d.state === 2);
-
-      document.getElementById('src-label').textContent = d.qnx_live ? 'QNX SDP v8.0 (LIVE)' : 'QNX SDP v8.0 (TWIN)';
-      document.getElementById('uptime-txt').textContent = fmtUptime(d.uptime_s || 0);
-
-      const banner = document.getElementById('top-banner');
-      const wsPanel = document.getElementById('ws-panel');
-      const badge = document.getElementById('clamp-badge');
-
-      banner.classList.toggle('clamped', clamped);
-      wsPanel.classList.toggle('workspace-clamped', clamped);
-      badge.classList.toggle('active', clamped);
-
-      document.getElementById('btn-starve').classList.toggle('active', d.fault_mode === 1);
-      document.getElementById('btn-unsafe').classList.toggle('active', d.fault_mode === 2);
-
-      if (clamped) {
-        document.getElementById('banner-icon').textContent = '⚠️';
-        document.getElementById('banner-headline').textContent = 'SAFE CLAMPED – FAULT DETECTED';
-        const reasonTxt = d.fault_reason === 1
-          ? 'AI HEARTBEAT WATCHDOG TIMEOUT (>2.50 ms) — TIP LOCKED TO SAFE BOUNDARY'
-          : 'UNSAFE AI TRAJECTORY INTERCEPTED — TIP POSITION LOCKED TO R = 18.00 mm';
-        document.getElementById('banner-sub').textContent = reasonTxt;
-        const mm = document.getElementById('meta-mode');
-        mm.textContent = 'SAFE CLAMPED';
-        mm.style.color = '#f87171';
-
-        document.getElementById('clamp-badge-icon').textContent = '🛑';
-        const cbt = document.getElementById('clamp-badge-title');
-        cbt.textContent = 'SAFE CLAMPED';
-        cbt.style.color = '#f87171';
-        document.getElementById('clamp-badge-sub').textContent = 'INSTRUMENT POSITION LOCKED TO SAFE BOUNDARY';
-      } else {
-        document.getElementById('banner-icon').textContent = '🛡️';
-        document.getElementById('banner-headline').textContent = 'NORMAL — AI TREMOR FILTER INSIDE SAFE ZONE';
-        document.getElementById('banner-sub').textContent = '1kHz WATCHDOG NOMINAL • SAFE SURGICAL BOUNDARY R ≤ 18.00 mm';
-        const mm = document.getElementById('meta-mode');
-        mm.textContent = 'NORMAL';
-        mm.style.color = '#4ade80';
-
-        document.getElementById('clamp-badge-icon').textContent = '🛡️';
-        const cbt = document.getElementById('clamp-badge-title');
-        cbt.textContent = 'SAFE ENVELOPE NOMINAL';
-        cbt.style.color = '#4ade80';
-        document.getElementById('clamp-badge-sub').innerHTML = `AI DECISION: (${d.ai_x.toFixed(1)}, ${d.ai_y.toFixed(1)}) mm`;
-      }
-
-      const aiEl = document.getElementById('m-ai-lat');
-      aiEl.textContent = `${d.ai_latency_us.toFixed(2)} µs`;
-      aiEl.className = d.ai_latency_us > 850 ? 'm-val red' : 'm-val';
-
-      document.getElementById('m-react').innerHTML =
-        `${d.reaction_us.toFixed(2)} µs <small style="font-size:12px;color:#94a3b8;">/ p99: ${d.p99_reaction_us.toFixed(2)} µs</small>`;
-
-      const missEl = document.getElementById('m-missed');
-      missEl.textContent = d.missed_deadlines;
-      missEl.className = d.missed_deadlines > 0 ? 'm-val red' : 'm-val green';
-
-      document.getElementById('osc-p2p').textContent = `${d.p2p_jitter_us.toFixed(2)} µs`;
-      document.getElementById('osc-rms').textContent = `${d.rms_jitter_us.toFixed(2)} µs`;
-
-      document.getElementById('pid-sup').textContent = d.sup_pid || 294931;
-      document.getElementById('pid-resmgr').textContent = d.resmgr_pid || 282642;
-      document.getElementById('pid-ai').textContent = d.ai_pid || 307220;
-
-      const rowSup = document.getElementById('row-sup');
-      rowSup.classList.toggle('clamped', clamped);
-      const stSup = document.getElementById('st-sup');
-      stSup.textContent = clamped ? 'CLAMPING (ACTIVE)' : 'RECEIVE';
-      stSup.style.color = clamped ? '#f87171' : '#4ade80';
-
-      const stAi = document.getElementById('st-ai');
-      if (d.fault_mode === 1) {
-        stAi.textContent = 'STARVED (PRIO 35r)';
-        stAi.style.color = '#f87171';
-      } else if (d.fault_mode === 2) {
-        stAi.textContent = 'CORRUPTED OUTPUT';
-        stAi.style.color = '#fbbf24';
-      } else {
-        stAi.textContent = 'READY (1kHz)';
-        stAi.style.color = '#cbd5e1';
-      }
-
-      document.getElementById('b-radius').textContent = d.radius_mm.toFixed(2);
-      document.getElementById('b-radius-sub').textContent = clamped ? 'RADIUS (LOCKED BOUNDARY)' : 'RADIUS FROM CENTER';
-      document.getElementById('b-offset').textContent = d.offset_mm.toFixed(2);
-      document.getElementById('b-offset-sub').textContent = clamped ? 'CLAMPED AT PERIMETER' : 'OFFSET FROM BOUNDARY';
-      document.getElementById('b-force').textContent = d.tip_force_n.toFixed(2);
-      document.getElementById('b-force-sub').textContent = clamped ? 'ZERO FORCE LOCK' : 'SAFE TISSUE CONTACT';
-
-      const hbWrap = document.getElementById('b-hb-wrap');
-      document.getElementById('b-hb').textContent = d.heartbeat_age_ms.toFixed(2);
-      hbWrap.style.color = d.heartbeat_age_ms > 2.5 ? '#f87171' : '#22d3ee';
-    }
-
-    function drawWorkspace() {
-      const c = document.getElementById('ws-canvas');
-      const rect = c.parentElement.getBoundingClientRect();
-      if (c.width !== Math.floor(rect.width) || c.height !== Math.floor(rect.height)) {
-        c.width = Math.floor(rect.width);
-        c.height = Math.floor(rect.height);
-      }
-      const ctx = c.getContext('2d');
-      const w = c.width, h = c.height;
-      const cx = w / 2, cy = h / 2;
-      const pxPerMm = (Math.min(w, h) * 0.44) / VIEW_EXTENT_MM;
-      const safePx = SAFE_R_MM * pxPerMm;
-
-      ctx.clearRect(0, 0, w, h);
-
-      // Subtle surgical polar grid
-      ctx.strokeStyle = 'rgba(30, 58, 95, 0.35)';
-      ctx.lineWidth = 1;
-      [6, 12, 24].forEach(rmm => {
-        ctx.beginPath();
-        ctx.arc(cx, cy, rmm * pxPerMm, 0, Math.PI * 2);
-        ctx.stroke();
-      });
-      ctx.beginPath();
-      ctx.moveTo(cx - safePx * 1.35, cy); ctx.lineTo(cx + safePx * 1.35, cy);
-      ctx.moveTo(cx, cy - safePx * 1.35); ctx.lineTo(cx, cy + safePx * 1.35);
-      ctx.stroke();
-
-      // Organic surgical cavity nebula glow inside R=18mm
-      const grad = ctx.createRadialGradient(cx - safePx * 0.18, cy + safePx * 0.12, 8, cx, cy, safePx);
-      grad.addColorStop(0, 'rgba(56, 189, 248, 0.13)');
-      grad.addColorStop(0.65, 'rgba(15, 35, 62, 0.18)');
-      grad.addColorStop(1, 'rgba(4, 10, 20, 0.02)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(cx, cy, safePx, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Glowing Cyan R = 18.00 mm Safe Boundary Ring
-      const clamped = (latest.state === 2);
-      ctx.save();
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = clamped ? '#ef4444' : '#22d3ee';
-      ctx.strokeStyle = clamped ? '#f87171' : '#22d3ee';
-      ctx.lineWidth = 2.6;
-      ctx.beginPath();
-      ctx.arc(cx, cy, safePx, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      // R = 18.00 mm label inside upper-right quadrant
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = '600 13px "JetBrains Mono", monospace';
-      ctx.fillText('R = 18.00 mm', cx + safePx * 0.18, cy - safePx * 0.68);
-
-      const rawPxX = cx + latest.raw_x * pxPerMm;
-      const rawPxY = cy - latest.raw_y * pxPerMm;
-      const aiPxX  = cx + latest.ai_x * pxPerMm;
-      const aiPxY  = cy - latest.ai_y * pxPerMm;
-      const safePxX = cx + latest.x * pxPerMm;
-      const safePxY = cy - latest.y * pxPerMm;
-
-      // Safe tool motion ribbon
-      trailSafe.push({ x: safePxX, y: safePxY });
-      if (trailSafe.length > 45) trailSafe.shift();
-      if (trailSafe.length > 2) {
-        ctx.strokeStyle = clamped ? 'rgba(248, 113, 113, 0.35)' : 'rgba(34, 211, 238, 0.38)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        trailSafe.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-        ctx.stroke();
-      }
-
-      // Raw 10Hz Surgeon Tremor Ghost Dot
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.55)';
-      ctx.beginPath();
-      ctx.arc(rawPxX, rawPxY, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // If AI commands an unsafe excursion outside R=18mm, draw rejected rogue vector!
-      if (clamped) {
-        ctx.save();
-        ctx.setLineDash([5, 4]);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(safePxX, safePxY);
-        ctx.lineTo(aiPxX, aiPxY);
-        ctx.stroke();
-        ctx.restore();
-
-        // Red scalpel probe wedge + glowing clamp reticle locked on boundary
-        const ang = Math.atan2(safePxY - cy, safePxX - cx);
-        ctx.save();
-        ctx.translate(safePxX, safePxY);
-        ctx.rotate(ang);
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.78)';
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(44, -6);
-        ctx.lineTo(48, 0);
-        ctx.lineTo(44, 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        ctx.save();
-        ctx.shadowBlur = 22;
-        ctx.shadowColor = '#ef4444';
-        ctx.strokeStyle = '#f87171';
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.arc(safePxX, safePxY, 12, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.moveTo(safePxX - 8, safePxY); ctx.lineTo(safePxX + 8, safePxY);
-        ctx.moveTo(safePxX, safePxY - 8); ctx.lineTo(safePxX, safePxY + 8);
-        ctx.stroke();
-      } else {
-        // Nominal glowing cyan/emerald surgical end-effector
-        ctx.save();
-        ctx.shadowBlur = 16;
-        ctx.shadowColor = '#4ade80';
-        ctx.fillStyle = '#4ade80';
-        ctx.beginPath();
-        ctx.arc(safePxX, safePxY, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    function drawOscilloscope() {
-      const c = document.getElementById('osc-canvas');
-      const rect = c.getBoundingClientRect();
-      if (c.width !== Math.floor(rect.width) || c.height !== Math.floor(rect.height)) {
-        c.width = Math.floor(rect.width);
-        c.height = Math.floor(rect.height);
-      }
-      const ctx = c.getContext('2d');
-      const w = c.width, h = c.height;
-      ctx.clearRect(0, 0, w, h);
-
-      const padL = 38, padR = 10, padT = 10, padB = 18;
-      const pw = w - padL - padR;
-      const ph = h - padT - padB;
-      const midY = padT + ph / 2;
-
-      // Grid lines (-2.0, -1.0, 0, +1.0, +2.0 us)
-      ctx.strokeStyle = 'rgba(30, 58, 95, 0.45)';
-      ctx.fillStyle = '#7c93b0';
-      ctx.font = '10px "JetBrains Mono", monospace';
-      ctx.lineWidth = 1;
-
-      [-2, -1, 0, 1, 2].forEach(v => {
-        const y = midY - (v / 2.0) * (ph / 2);
-        ctx.beginPath();
-        ctx.moveTo(padL, y);
-        ctx.lineTo(padL + pw, y);
-        ctx.stroke();
-        const lbl = v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
-        ctx.fillText(lbl, 4, y + 3);
-      });
-
-      // X-axis labels
-      ctx.fillText('-5.0 ms', padL, h - 4);
-      ctx.fillText('0', padL + pw * 0.5 - 4, h - 4);
-      ctx.fillText('+5.0 ms', padL + pw - 44, h - 4);
-
-      // Cyan hardware jitter waveform
-      ctx.save();
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = '#22d3ee';
-      ctx.strokeStyle = '#22d3ee';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = 0; i < oscHistory.length; i++) {
-        const x = padL + (i / (oscHistory.length - 1)) * pw;
-        const clampedVal = Math.max(-2.0, Math.min(2.0, oscHistory[i]));
-        const y = midY - (clampedVal / 2.0) * (ph / 2);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    async function pollLoop() {
-      try {
-        const res = await fetch('/api/telemetry', { cache: 'no-store' });
-        if (res.ok) {
-          const d = await res.json();
-          latest = d;
-          oscHistory.push(d.osc_sample_us || 0);
-          if (oscHistory.length > 110) oscHistory.shift();
-
-          sparkAiHist.push(Math.min(100, d.ai_latency_us));
-          if (sparkAiHist.length > 40) sparkAiHist.shift();
-          sparkSupHist.push(d.reaction_us);
-          if (sparkSupHist.length > 40) sparkSupHist.shift();
-
-          updateDOM(d);
-          drawSparkline('spark-ai', sparkAiHist, d.ai_latency_us > 850 ? '#f87171' : '#22d3ee', 5, 100);
-          drawSparkline('spark-sup', sparkSupHist, '#4ade80', 0.5, 3.0);
-        }
-      } catch (e) {}
-    }
-
-    function renderLoop() {
-      drawWorkspace();
-      drawOscilloscope();
-      requestAnimationFrame(renderLoop);
-    }
-
-    setInterval(pollLoop, 45);
-    requestAnimationFrame(renderLoop);
-  </script>
 </body>
 </html>
