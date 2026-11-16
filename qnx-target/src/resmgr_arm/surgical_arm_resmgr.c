@@ -1,151 +1,207 @@
-#include <errno.h>
+/*
+ * NeuroGuard-RT: POSIX Device Resource Manager (/dev/surgical_arm)
+ * Priority: 60f (SCHED_FIFO) on QNX SDP 8.0
+ *
+ * Enforces single-writer actuator sovereignty: ONLY safety_supervisor (presenting
+ * ACTUATOR_AUTH_MAGIC) can update physical scalpel state. Exposes JSON telemetry
+ * via POSIX read() and fault-injection / reset latches via POSIX write().
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
+#include <sched.h>
+#include <time.h>
+#include <sys/iofunc.h>
+#include <sys/dispatch.h>
 #include <sys/neutrino.h>
-#include <sys/syspage.h>
-#include "../../include/neuroguard_ipc.h"
 
-static resmgr_connect_funcs_t connect_funcs;
-static resmgr_io_funcs_t      io_funcs;
-static iofunc_attr_t          attr;
+#include "neuroguard_ipc.h"
 
-static supervisor_reply_t latest_state = {
-    .raw_x = 74.0, .raw_y = 50.0,
-    .ai_x = 74.0,  .ai_y = 50.0,
-    .safe_x = 74.0, .safe_y = 50.0,
-    .distance_to_artery = 24.0,
-    .scheduling_jitter_ns = 1180,
-    .loop_latency_us = 42,
-    .state = STATE_NOMINAL_AI,
-    .safety_interventions_count = 0,
-    .cpu_bomb_active = 0,
-    .manual_override_active = 0,
-    .manual_target_x = 74.0,
-    .manual_target_y = 50.0
-};
+static pthread_mutex_t     g_lock = PTHREAD_MUTEX_INITIALIZER;
+static ng_actuator_state_t g_act;
+static uint32_t            g_fault_mode = FAULT_NONE;
+static uint64_t            g_reset_seq  = 0;
+static time_t              g_boot_time  = 0;
+static int32_t             g_resmgr_pid = 0;
 
-static volatile int sticky_bomb_flag = 0;
-static volatile int sticky_reset_flag = 0;
-static volatile int manual_active = 0;
-static volatile double manual_x = 74.0;
-static volatile double manual_y = 50.0;
-static pthread_mutex_t state_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
+    int status = iofunc_read_verify(ctp, msg, ocb, NULL);
+    if (status != EOK) return status;
 
-int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
-    int status;
-    if ((status = iofunc_read_verify(ctp, msg, ocb, NULL)) != EOK)
-        return status;
-    if ((msg->i.xtype & _IO_XTYPE_MASK) != _IO_XTYPE_NONE)
+    if ((msg->i.xtype & _IO_XTYPE_MASK) != _IO_XTYPE_NONE) {
         return ENOSYS;
-
-    char buf[512];
-    pthread_mutex_lock(&state_mutex);
-    int len = snprintf(buf, sizeof(buf),
-        "{\"x\":%.2f,\"y\":%.2f,\"raw_x\":%.2f,\"raw_y\":%.2f,\"ai_x\":%.2f,\"ai_y\":%.2f,"
-        "\"artery_dist\":%.2f,\"jitter_ns\":%u,\"latency_us\":%u,\"state\":%d,"
-        "\"interventions\":%u,\"bomb\":%d,\"reset\":%d,\"man\":%d,\"mx\":%.2f,\"my\":%.2f}\n",
-        latest_state.safe_x, latest_state.safe_y,
-        latest_state.raw_x, latest_state.raw_y,
-        latest_state.ai_x, latest_state.ai_y,
-        latest_state.distance_to_artery, latest_state.scheduling_jitter_ns,
-        latest_state.loop_latency_us, latest_state.state,
-        latest_state.safety_interventions_count, sticky_bomb_flag,
-        sticky_reset_flag, manual_active, manual_x, manual_y);
-    sticky_reset_flag = 0;
-    pthread_mutex_unlock(&state_mutex);
-
-    if (ocb->offset >= len) {
-        _IO_SET_READ_NBYTES(ctp, 0);
-        return _RESMGR_NPARTS(0);
     }
 
-    int nbytes = min(msg->i.nbytes, len - ocb->offset);
-    MsgReply(ctp->rcvid, nbytes, buf + ocb->offset, nbytes);
-    ocb->offset += nbytes;
+    /* Format JSON on fresh offset 0 read */
+    if (ocb->offset == 0) {
+        char json[1024];
+        pthread_mutex_lock(&g_lock);
+        long uptime_s = (long)(time(NULL) - g_boot_time);
+        if (uptime_s < 0) uptime_s = 0;
+
+        int len = snprintf(
+            json, sizeof(json),
+            "{\"state\":%u,\"fault_mode\":%u,\"fault_reason\":%u,\"seq\":%u,"
+            "\"raw_x\":%.2f,\"raw_y\":%.2f,\"ai_x\":%.2f,\"ai_y\":%.2f,"
+            "\"x\":%.2f,\"y\":%.2f,\"radius_mm\":%.2f,\"offset_mm\":%.2f,"
+            "\"safe_radius_mm\":%.2f,\"tip_force_n\":%.2f,"
+            "\"ai_latency_us\":%.2f,\"reaction_us\":%.2f,\"p99_reaction_us\":%.2f,"
+            "\"jitter_ns\":%llu,\"p2p_jitter_us\":%.2f,\"rms_jitter_us\":%.2f,"
+            "\"heartbeat_age_ms\":%.2f,\"missed_deadlines\":%llu,"
+            "\"interventions\":%llu,\"bomb\":%u,\"reset_seq\":%llu,"
+            "\"sup_pid\":%d,\"ai_pid\":%d,\"resmgr_pid\":%d,\"uptime_s\":%ld}\n",
+            g_act.state,
+            g_fault_mode,
+            g_act.fault_reason,
+            g_act.heartbeat_seq,
+            g_act.raw_x_mm, g_act.raw_y_mm,
+            g_act.ai_x_mm, g_act.ai_y_mm,
+            g_act.safe_x_mm, g_act.safe_y_mm,
+            g_act.tool_radius_mm, g_act.boundary_offset_mm,
+            SAFE_BOUNDARY_RADIUS_MM, g_act.tip_force_n,
+            (double)g_act.ai_latency_ns / 1000.0,
+            (double)g_act.reaction_ns / 1000.0,
+            (double)g_act.p99_reaction_ns / 1000.0,
+            (unsigned long long)g_act.reaction_ns,
+            (double)g_act.p2p_jitter_ns / 1000.0,
+            (double)g_act.rms_jitter_ns / 1000.0,
+            (double)g_act.heartbeat_age_us / 1000.0,
+            (unsigned long long)g_act.missed_deadlines,
+            (unsigned long long)g_act.missed_deadlines,
+            (g_fault_mode != FAULT_NONE) ? 1U : 0U,
+            (unsigned long long)g_reset_seq,
+            g_act.sup_pid, g_act.ai_pid, g_resmgr_pid, uptime_s
+        );
+        pthread_mutex_unlock(&g_lock);
+
+        int nbytes = msg->i.nbytes;
+        if (nbytes > len) nbytes = len;
+        MsgReply(ctp->rcvid, nbytes, json, nbytes);
+        ocb->offset += nbytes;
+        return _RESMGR_NOREPLY;
+    }
+
+    /* EOF for subsequent reads until rewind/reopen */
+    MsgReply(ctp->rcvid, 0, NULL, 0);
     return _RESMGR_NOREPLY;
 }
 
-int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
-    int status;
-    if ((status = iofunc_write_verify(ctp, msg, ocb, NULL)) != EOK)
-        return status;
+static int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
+    int status = iofunc_write_verify(ctp, msg, ocb, NULL);
+    if (status != EOK) return status;
 
-    _IO_SET_WRITE_NBYTES(ctp, msg->i.nbytes);
-
-    if (msg->i.nbytes == sizeof(supervisor_reply_t)) {
-        pthread_mutex_lock(&state_mutex);
-        resmgr_msgread(ctp, &latest_state, sizeof(supervisor_reply_t), sizeof(msg->i));
-        latest_state.cpu_bomb_active = sticky_bomb_flag;
-        pthread_mutex_unlock(&state_mutex);
-    } else {
-        char cmd[128] = {0};
-        int bytes = (msg->i.nbytes < 127) ? msg->i.nbytes : 127;
-        resmgr_msgread(ctp, cmd, bytes, sizeof(msg->i));
-        pthread_mutex_lock(&state_mutex);
-        if (strstr(cmd, "BOMB=1") != NULL) {
-            sticky_bomb_flag = 1;
-        } else if (strstr(cmd, "BOMB=0") != NULL) {
-            sticky_bomb_flag = 0;
-        } else if (strstr(cmd, "RESET") != NULL) {
-            sticky_bomb_flag = 0;
-            sticky_reset_flag = 1;
-            latest_state.safety_interventions_count = 0;
-        } else if (strncmp(cmd, "POS=", 4) == 0) {
-            double px = 50.0, py = 50.0;
-            if (sscanf(cmd + 4, "%lf,%lf", &px, &py) == 2) {
-                manual_active = 1;
-                manual_x = px;
-                manual_y = py;
-            }
-        } else if (strstr(cmd, "AUTO") != NULL) {
-            manual_active = 0;
-        }
-        pthread_mutex_unlock(&state_mutex);
+    if ((msg->i.xtype & _IO_XTYPE_MASK) != _IO_XTYPE_NONE) {
+        return ENOSYS;
     }
-    return _RESMGR_NPARTS(0);
+
+    size_t nbytes = msg->i.nbytes;
+
+    /* Path A: Authoritative Binary State Sync from Priority-250f Safety Supervisor */
+    if (nbytes == sizeof(ng_actuator_state_t)) {
+        ng_actuator_state_t incoming;
+        if (resmgr_msgread(ctp, &incoming, sizeof(incoming), sizeof(msg->i)) != sizeof(incoming)) {
+            return EFAULT;
+        }
+        if (incoming.auth_magic != ACTUATOR_AUTH_MAGIC) {
+            /* Reject unauthorized attempt to command surgical actuator */
+            return EPERM;
+        }
+        pthread_mutex_lock(&g_lock);
+        g_act = incoming;
+        pthread_mutex_unlock(&g_lock);
+
+        _IO_SET_WRITE_NBYTES(ctp, nbytes);
+        return EOK;
+    }
+
+    /* Path B: Operator Fault Injection / Reset Control Latch */
+    char cmd[128];
+    size_t copy_len = (nbytes < sizeof(cmd) - 1) ? nbytes : (sizeof(cmd) - 1);
+    if (resmgr_msgread(ctp, cmd, copy_len, sizeof(msg->i)) < 0) {
+        return EFAULT;
+    }
+    cmd[copy_len] = '\0';
+
+    pthread_mutex_lock(&g_lock);
+    if (strstr(cmd, "STARVE=1") || strstr(cmd, "BOMB=1")) {
+        g_fault_mode = FAULT_STARVE_AI;
+    } else if (strstr(cmd, "UNSAFE=1")) {
+        g_fault_mode = FAULT_UNSAFE_OUTPUT;
+    } else if (strstr(cmd, "RESET") || strstr(cmd, "BOMB=0") || strstr(cmd, "STARVE=0") || strstr(cmd, "UNSAFE=0")) {
+        g_fault_mode = FAULT_NONE;
+        g_reset_seq++;
+    }
+    pthread_mutex_unlock(&g_lock);
+
+    _IO_SET_WRITE_NBYTES(ctp, nbytes);
+    return EOK;
 }
 
-int main(int argc, char **argv) {
-    dispatch_t           *dpp;
-    resmgr_attr_t        resmgr_attr;
-    dispatch_context_t   *ctp;
+int main(void) {
+    struct sched_param sp;
+    memset(&sp, 0, sizeof(sp));
+    sp.sched_priority = 60;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+
+    g_boot_time  = time(NULL);
+    g_resmgr_pid = (int32_t)getpid();
+
+    memset(&g_act, 0, sizeof(g_act));
+    g_act.safe_x_mm          = 11.0;
+    g_act.safe_y_mm          = 0.0;
+    g_act.tool_radius_mm     = 11.0;
+    g_act.boundary_offset_mm = SAFE_BOUNDARY_RADIUS_MM - 11.0;
+    g_act.tip_force_n        = 0.12;
+    g_act.reaction_ns        = 1420;
+    g_act.p99_reaction_ns    = 1840;
+    g_act.p2p_jitter_ns      = 1370;
+    g_act.rms_jitter_ns      = 230;
 
     int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY | _NTO_CHF_DISCONNECT);
-    if ((dpp = dispatch_create_channel(chid, DISPATCH_FLAG_NOLOCK)) == NULL) {
-        perror("dispatch_create_channel");
+    if (chid == -1) {
+        perror("[surgical_arm_resmgr] ChannelCreate");
         return EXIT_FAILURE;
     }
 
-    struct sched_param param = { .sched_priority = 60 };
-    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
-
-    memset(&resmgr_attr, 0, sizeof(resmgr_attr));
-    resmgr_attr.nparts_max = 1;
-    resmgr_attr.msg_max_size = 2048;
-
-    iofunc_func_init(_RESMGR_CONNECT_NFUNCS, &connect_funcs,
-                     _RESMGR_IO_NFUNCS, &io_funcs);
-    io_funcs.read  = io_read;
-    io_funcs.write = io_write;
-
-    iofunc_attr_init(&attr, S_IFNAM | 0666, 0, 0);
-
-    if (resmgr_attach(dpp, &resmgr_attr, SURGICAL_ARM_DEV_PATH, _FTYPE_ANY, 0,
-                      &connect_funcs, &io_funcs, &attr) == -1) {
-        perror("resmgr_attach");
+    dispatch_t *dpp = dispatch_create_channel(chid, 0);
+    if (!dpp) {
+        perror("[surgical_arm_resmgr] dispatch_create_channel");
         return EXIT_FAILURE;
     }
 
-    printf("[NeuroGuard] QNX 8.0 Resource Manager active at %s (SCHED_FIFO Prio 60)\n",
-           SURGICAL_ARM_DEV_PATH);
+    resmgr_attr_t rattr;
+    memset(&rattr, 0, sizeof(rattr));
+    rattr.nparts_max   = 1;
+    rattr.msg_max_size = 2048;
 
-    ctp = dispatch_context_alloc(dpp);
+    resmgr_connect_funcs_t cfuncs;
+    resmgr_io_funcs_t      ifuncs;
+    iofunc_attr_t          iattr;
+
+    iofunc_func_init(_RESMGR_CONNECT_NFUNCS, &cfuncs, _RESMGR_IO_NFUNCS, &ifuncs);
+    ifuncs.read  = io_read;
+    ifuncs.write = io_write;
+    iofunc_attr_init(&iattr, S_IFCHR | 0666, NULL, NULL);
+
+    int id = resmgr_attach(dpp, &rattr, ACTUATOR_DEV_PATH, _FTYPE_ANY, 0, &cfuncs, &ifuncs, &iattr);
+    if (id == -1) {
+        perror("[surgical_arm_resmgr] resmgr_attach");
+        return EXIT_FAILURE;
+    }
+
+    printf("[surgical_arm_resmgr] Mounted %s at Priority 60f (PID %d)\n", ACTUATOR_DEV_PATH, g_resmgr_pid);
+
+    dispatch_context_t *ctp = dispatch_context_alloc(dpp);
     while (1) {
-        if ((ctp = dispatch_block(ctp)) == NULL)
-            return EXIT_FAILURE;
+        if ((ctp = dispatch_block(ctp)) == NULL) {
+            if (errno == EINTR) continue;
+            break;
+        }
         dispatch_handler(ctp);
     }
     return EXIT_SUCCESS;

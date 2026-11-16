@@ -1,194 +1,222 @@
+/*
+ * NeuroGuard-RT: Untrusted AI Decision & Tremor Filtering Layer (Priority 20r SCHED_RR)
+ * Target OS: QNX SDP 8.0 (procnto-smp-instr x86_64)
+ *
+ * Reuses the 2x8x2 Recurrent Elman MLP neural filter at low priority (20r),
+ * streams 1kHz heartbeats + proposed tip coordinates via QNX MsgSend(), and
+ * exposes deterministic fault modes (Thread Starvation @ Prio 35r & Unsafe Output).
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
+#include <time.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/neutrino.h>
 #include <sys/syspage.h>
 #include <sys/dispatch.h>
-#include "../../include/neuroguard_ipc.h"
 
-static volatile int bomb_enabled = 0;
-static volatile int manual_mode = 0;
-static volatile double manual_target_x = 74.0;
-static volatile double manual_target_y = 50.0;
+#include "neuroguard_ipc.h"
 
-/* Pre-trained 2x8x2 Recurrent Elman MLP Weights for 8-12Hz Tremor Attenuation */
-static const double W_in[8][4] = {
-    { 0.32,  0.04,  0.18, -0.02}, {-0.05,  0.31, -0.03,  0.19},
-    { 0.25, -0.08,  0.22,  0.05}, { 0.07,  0.27,  0.04,  0.21},
-    {-0.14,  0.12, -0.11,  0.09}, { 0.19,  0.15,  0.14,  0.13},
-    { 0.28,  0.01,  0.24,  0.02}, { 0.02,  0.29,  0.01,  0.25}
+#define HIDDEN_UNITS 8
+
+static volatile uint32_t g_fault_mode = FAULT_NONE;
+
+/* Recurrent Elman MLP State (2 inputs -> 8 hidden -> 2 outputs) */
+static double g_hidden[HIDDEN_UNITS] = {0};
+static const double W_in[HIDDEN_UNITS][4] = {
+    { 0.35, -0.12,  0.48,  0.05},
+    {-0.22,  0.41,  0.11,  0.39},
+    { 0.18,  0.29, -0.33,  0.21},
+    { 0.44, -0.31,  0.19, -0.15},
+    {-0.15, -0.27,  0.36,  0.42},
+    { 0.28,  0.14, -0.25,  0.31},
+    {-0.39,  0.22,  0.41, -0.18},
+    { 0.12, -0.38,  0.14,  0.47}
 };
-static const double W_out[2][8] = {
-    { 0.28, -0.04,  0.24,  0.05, -0.08,  0.18,  0.31,  0.02},
-    {-0.03,  0.29,  0.04,  0.25,  0.09,  0.17,  0.01,  0.32}
+static const double W_out[2][HIDDEN_UNITS] = {
+    { 0.08, -0.05,  0.06,  0.04, -0.07,  0.05, -0.04,  0.06},
+    {-0.04,  0.07, -0.05,  0.06,  0.05, -0.06,  0.04,  0.07}
 };
 
-void *cpu_bomb_worker(void *arg) {
-    struct sched_param param = { .sched_priority = 25 };
-    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+/* Run 2x8x2 Recurrent Elman MLP step to attenuate 10Hz physiological hand tremor */
+static void elman_mlp_step(double raw_x, double raw_y,
+                           double prev_x, double prev_y,
+                           double *out_x, double *out_y) {
+    double in_vec[4] = { raw_x * 0.05, raw_y * 0.05, prev_x * 0.05, prev_y * 0.05 };
+    double next_h[HIDDEN_UNITS];
 
+    for (int i = 0; i < HIDDEN_UNITS; i++) {
+        double sum = 0.0;
+        for (int j = 0; j < 4; j++) {
+            sum += W_in[i][j] * in_vec[j];
+        }
+        sum += 0.25 * g_hidden[i];
+        next_h[i] = tanh(sum);
+    }
+    memcpy(g_hidden, next_h, sizeof(g_hidden));
+
+    double nn_dx = 0.0, nn_dy = 0.0;
+    for (int i = 0; i < HIDDEN_UNITS; i++) {
+        nn_dx += W_out[0][i] * g_hidden[i];
+        nn_dy += W_out[1][i] * g_hidden[i];
+    }
+
+    /* Blend smooth kinematics with neural residual correction */
+    const double alpha = 0.22;
+    *out_x = alpha * raw_x + (1.0 - alpha) * prev_x + nn_dx * 0.65;
+    *out_y = alpha * raw_y + (1.0 - alpha) * prev_y + nn_dy * 0.65;
+}
+
+/*
+ * Priority-35r Rogue CPU Hog Thread:
+ * Preempts Priority-20r AI thread on QNX SMP cores when FAULT_STARVE_AI is active,
+ * while remaining completely invisible to the Priority-250f Safety Supervisor.
+ */
+static void *cpu_starvation_hog_thread(void *arg) {
+    (void)arg;
+    struct sched_param sp;
+    memset(&sp, 0, sizeof(sp));
+    sp.sched_priority = 35;
+    pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
+
+    volatile double sink = 1.0001;
     while (1) {
-        if (bomb_enabled) {
-            volatile double sink = 0.0;
-            for (int i = 0; i < 380000; i++) {
-                sink += sin((double)i) * cos((double)i);
+        if (g_fault_mode == FAULT_STARVE_AI) {
+            for (int i = 0; i < 450000; i++) {
+                sink = sin(sink) * cos(sink) + 1.0001;
             }
-            usleep(1000);
+            usleep(500);
         } else {
-            usleep(20000);
+            usleep(15000);
         }
     }
     return NULL;
 }
 
-static void run_recurrent_mlp_filter(double raw_x, double raw_y,
-                                     double *out_x, double *out_y,
-                                     int starve_flag) {
-    static double prev_x = 74.0, prev_y = 50.0;
-    double norm_in[4] = {
-        (raw_x - 50.0) / 50.0,
-        (raw_y - 50.0) / 50.0,
-        (prev_x - 50.0) / 50.0,
-        (prev_y - 50.0) / 50.0
-    };
-
-    double hidden[8] = {0};
-    int passes = starve_flag ? 18500 : 25;
-
-    for (int p = 0; p < passes; p++) {
-        for (int i = 0; i < 8; i++) {
-            double sum = 0.0;
-            for (int j = 0; j < 4; j++) {
-                sum += W_in[i][j] * norm_in[j];
-            }
-            hidden[i] = tanh(sum);
+/* Poll /dev/surgical_arm directly so AI detects fault recovery even while starved */
+static uint32_t read_fault_latch(int dev_fd) {
+    if (dev_fd < 0) return g_fault_mode;
+    char buf[512];
+    ssize_t n = pread(dev_fd, buf, sizeof(buf) - 1, 0);
+    if (n > 0) {
+        buf[n] = '\0';
+        const char *fm = strstr(buf, "\"fault_mode\":");
+        if (fm) {
+            return (uint32_t)strtoul(fm + 13, NULL, 10);
         }
     }
-
-    double pred_dx = 0.0, pred_dy = 0.0;
-    for (int i = 0; i < 8; i++) {
-        pred_dx += W_out[0][i] * hidden[i];
-        pred_dy += W_out[1][i] * hidden[i];
-    }
-
-    double fx = 0.36 * raw_x + 0.64 * prev_x + pred_dx * 0.5;
-    double fy = 0.36 * raw_y + 0.64 * prev_y + pred_dy * 0.5;
-    prev_x = fx;
-    prev_y = fy;
-
-    if (starve_flag) {
-        /* Under severe thread starvation, stale recurrent state drifts into artery zone */
-        *out_x = 50.0 + (raw_x - 50.0) * 0.32;
-        *out_y = 50.0 + (raw_y - 50.0) * 0.32;
-    } else if (manual_mode) {
-        *out_x = fx;
-        *out_y = fy;
-    } else {
-        double dx = fx - 50.0;
-        double dy = fy - 50.0;
-        double r = sqrt(dx * dx + dy * dy);
-        if (r < 21.5 && r > 0.01) {
-            *out_x = 50.0 + dx * (22.5 / r);
-            *out_y = 50.0 + dy * (22.5 / r);
-        } else {
-            *out_x = fx;
-            *out_y = fy;
-        }
-    }
+    return g_fault_mode;
 }
 
-static void poll_resmgr_commands(int coid) {
-    int fd = open(SURGICAL_ARM_DEV_PATH, O_RDONLY);
-    if (fd >= 0) {
-        char buf[512] = {0};
-        if (read(fd, buf, sizeof(buf) - 1) > 0) {
-            char *p = strstr(buf, "\"bomb\":");
-            if (p) {
-                int new_bomb = atoi(p + 7);
-                if (new_bomb != bomb_enabled) {
-                    bomb_enabled = new_bomb;
-                    MsgSendPulse(coid, -1, PULSE_CODE_CPU_BOMB, bomb_enabled);
-                }
-            }
-            char *rst = strstr(buf, "\"reset\":1");
-            if (rst) {
-                MsgSendPulse(coid, -1, PULSE_CODE_HEARTBEAT, 0);
-            }
-            char *man = strstr(buf, "\"man\":");
-            if (man) {
-                manual_mode = atoi(man + 6);
-            }
-            char *mx = strstr(buf, "\"mx\":");
-            char *my = strstr(buf, "\"my\":");
-            if (mx && my) {
-                manual_target_x = atof(mx + 5);
-                manual_target_y = atof(my + 5);
-            }
-        }
-        close(fd);
-    }
-}
+int main(void) {
+    /* 1. Set Untrusted AI Layer to Low Real-Time Priority 20r (SCHED_RR) */
+    struct sched_param sp;
+    memset(&sp, 0, sizeof(sp));
+    sp.sched_priority = 20;
+    pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
 
-int main(int argc, char **argv) {
-    int coid;
-    while ((coid = name_open(NEUROGUARD_ATTACH_POINT, 0)) == -1) {
-        usleep(100000);
+    /* Spawn 2 rogue Priority-35r CPU hog threads (matches 2-core SMP QEMU VM) */
+    pthread_t hog1, hog2;
+    pthread_create(&hog1, NULL, cpu_starvation_hog_thread, NULL);
+    pthread_create(&hog2, NULL, cpu_starvation_hog_thread, NULL);
+    pthread_detach(hog1);
+    pthread_detach(hog2);
+
+    /* 2. Connect to Priority-250f Safety Supervisor via QNX Namespace */
+    int sup_coid = -1;
+    printf("[ai_tremor_engine] Connecting to /dev/name/local/%s...\n", SUPERVISOR_ATTACH_NAME);
+    while (sup_coid < 0) {
+        sup_coid = name_open(SUPERVISOR_ATTACH_NAME, 0);
+        if (sup_coid < 0) usleep(50000);
     }
 
-    struct sched_param param = { .sched_priority = 15 };
-    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
-
-    pthread_t bomb_tid;
-    pthread_create(&bomb_tid, NULL, cpu_bomb_worker, NULL);
-
+    int dev_fd = open(ACTUATOR_DEV_PATH, O_RDONLY);
     uint64_t cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
-    double angle = 0.0;
-    int tick = 0;
 
-    printf("[AITremorEngine] Recurrent 2x8x2 MLP Online | Priority: 15\n");
+    uint32_t seq    = 0;
+    double   filt_x = 11.0;
+    double   filt_y = 0.0;
+    double   t_sec  = 0.0;
+
+    printf("[ai_tremor_engine] Online at Priority 20r (PID %d) -> Streaming 1kHz Heartbeats\n",
+           (int)getpid());
 
     while (1) {
-        if ((tick++ % 2) == 0) {
-            poll_resmgr_commands(coid);
+        if ((seq % 16) == 0) {
+            if (dev_fd < 0) dev_fd = open(ACTUATOR_DEV_PATH, O_RDONLY);
+            g_fault_mode = read_fault_latch(dev_fd);
         }
 
-        angle += 0.045;
-        double tremor_x = 2.6 * sin(angle * 11.0);
-        double tremor_y = 2.6 * cos(angle * 13.0);
-
-        double base_x = manual_mode ? manual_target_x : (50.0 + 25.0 * cos(angle));
-        double base_y = manual_mode ? manual_target_y : (50.0 + 25.0 * sin(angle));
-        double raw_x = base_x + tremor_x;
-        double raw_y = base_y + tremor_y;
-
         uint64_t t0 = ClockCycles();
-        double filt_x, filt_y;
-        run_recurrent_mlp_filter(raw_x, raw_y, &filt_x, &filt_y, bomb_enabled);
+
+        /* Simulate smooth microsurgical trajectory inside R <= 18.00 mm (R ~ 11.5 mm) */
+        t_sec += 0.001;
+        double base_r = 11.2 + 2.4 * sin(t_sec * 0.9);
+        double angle  = t_sec * 1.35;
+
+        /* Add 10 Hz physiological surgeon hand tremor (+/- 1.6 mm) */
+        double tremor_x = 1.55 * sin(2.0 * M_PI * 10.0 * t_sec) + 0.45 * cos(2.0 * M_PI * 23.0 * t_sec);
+        double tremor_y = 1.55 * cos(2.0 * M_PI * 10.0 * t_sec) + 0.45 * sin(2.0 * M_PI * 19.0 * t_sec);
+
+        double raw_x = base_r * cos(angle) + tremor_x;
+        double raw_y = base_r * sin(angle) + tremor_y;
+
+        elman_mlp_step(raw_x, raw_y, filt_x, filt_y, &filt_x, &filt_y);
+
+        double prop_x = filt_x;
+        double prop_y = filt_y;
+
+        /* Fault Mode 1: Starve AI Thread past 2.50 ms Watchdog Deadline */
+        if (g_fault_mode == FAULT_STARVE_AI) {
+            volatile double burn = 1.0;
+            for (int k = 0; k < 280000; k++) {
+                burn += sin((double)k * 0.01);
+            }
+            /* Delay heartbeat delivery to 18 ms so Supervisor 1kHz Watchdog catches timeout */
+            usleep(18000);
+        }
+
+        /* Fault Mode 2: Corrupt Neural Output Outside Safe R = 18.00 mm Boundary */
+        if (g_fault_mode == FAULT_UNSAFE_OUTPUT) {
+            double rogue_r = 25.40; /* Violates R <= 18.00 mm safe surgical zone! */
+            prop_x = rogue_r * cos(angle);
+            prop_y = rogue_r * sin(angle);
+        }
+
         uint64_t t1 = ClockCycles();
+        uint64_t inf_ns = ((t1 - t0) * 1000000000ULL) / cps;
+        if (inf_ns < 8000) inf_ns += 11800; /* Baseline ~12.3 us MLP compute footprint */
 
-        uint32_t inf_us = (uint32_t)(((t1 - t0) * 1000000ULL) / cps);
-        if (inf_us < 15) inf_us = 15;
-
-        kinematics_msg_t msg;
-        supervisor_reply_t reply;
+        ng_ai_msg_t msg;
         memset(&msg, 0, sizeof(msg));
-        msg.hdr.type = MSG_TYPE_KINEMATICS;
-        msg.timestamp_cycles = ClockCycles();
-        msg.raw_x = raw_x;
-        msg.raw_y = raw_y;
-        msg.filtered_x = filt_x;
-        msg.filtered_y = filt_y;
-        msg.ai_inference_us = inf_us;
+        msg.msg_type        = MSG_TYPE_AI_PROPOSAL;
+        msg.fault_mode_echo = (uint16_t)g_fault_mode;
+        msg.heartbeat_seq   = ++seq;
+        msg.raw_x_mm        = raw_x;
+        msg.raw_y_mm        = raw_y;
+        msg.ai_x_mm         = prop_x;
+        msg.ai_y_mm         = prop_y;
+        msg.ai_inference_ns = inf_ns;
 
-        MsgSend(coid, &msg, sizeof(msg), &reply, sizeof(reply));
-        usleep(16000);
+        ng_sup_reply_t reply;
+        if (MsgSend(sup_coid, &msg, sizeof(msg), &reply, sizeof(reply)) == 0) {
+            g_fault_mode = reply.active_fault_mode;
+        } else {
+            /* Reconnect if supervisor restarted */
+            name_close(sup_coid);
+            sup_coid = name_open(SUPERVISOR_ATTACH_NAME, 0);
+        }
+
+        /* Nominal 1,000 Hz (1.0 ms) AI heartbeat cadence */
+        usleep(1000);
     }
 
-    name_close(coid);
+    if (dev_fd >= 0) close(dev_fd);
+    name_close(sup_coid);
     return EXIT_SUCCESS;
 }
