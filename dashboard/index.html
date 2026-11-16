@@ -1,486 +1,1066 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NeuroGuard RT — QNX 8.0 Deterministic Surgical Safety Cage</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>QNX Surgical Robotics Cockpit — Real-Time Safety System</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
-    body { font-family: 'Inter', sans-serif; background-color: #060911; color: #e2e8f0; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-    .panel { background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(51, 65, 85, 0.75); backdrop-filter: blur(8px); }
-    .glow-red { box-shadow: 0 0 24px rgba(239, 68, 68, 0.45); border-color: rgba(239, 68, 68, 0.9); }
+    :root {
+      --bg-void: #040810;
+      --bg-panel: #09111e;
+      --bg-panel-alt: #0c1728;
+      --border-dim: #162a45;
+      --border-cyan: #0ea5e9;
+      --cyan: #22d3ee;
+      --cyan-soft: rgba(34, 211, 238, 0.16);
+      --green: #22c55e;
+      --green-bright: #4ade80;
+      --red: #ef4444;
+      --red-bright: #f87171;
+      --red-glow: rgba(239, 68, 68, 0.25);
+      --amber: #fbbf24;
+      --text-main: #e2e8f0;
+      --text-muted: #7c93b0;
+      --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", monospace;
+      --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: radial-gradient(circle at 25% 20%, #0b192c 0%, var(--bg-void) 70%);
+      color: var(--text-main);
+      font-family: var(--sans);
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 16px 8px;
+      gap: 10px;
+      user-select: none;
+    }
+
+    /* TOP HEADER BAR */
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.1fr 1.6fr 0.9fr;
+      gap: 12px;
+      align-items: stretch;
+      min-height: 62px;
+    }
+
+    .brand-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-dim);
+      border-radius: 10px;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .hex-logo {
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #f8fafc;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--cyan);
+      margin-top: 2px;
+    }
+
+    .status-banner {
+      background: rgba(16, 185, 129, 0.09);
+      border: 1px solid rgba(34, 197, 94, 0.55);
+      border-radius: 10px;
+      padding: 8px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.14s ease;
+    }
+
+    .status-banner.clamped {
+      background: linear-gradient(90deg, rgba(127, 29, 29, 0.55), rgba(69, 10, 10, 0.45));
+      border: 1.5px solid var(--red);
+      box-shadow: 0 0 24px var(--red-glow);
+    }
+
+    .banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .banner-headline {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: var(--green-bright);
+    }
+
+    .status-banner.clamped .banner-headline {
+      color: var(--red-bright);
+    }
+
+    .banner-sub {
+      font-size: 11px;
+      letter-spacing: 0.09em;
+      color: #86efac;
+      margin-top: 2px;
+    }
+
+    .status-banner.clamped .banner-sub {
+      color: #fca5a5;
+    }
+
+    .banner-meta {
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      color: var(--text-muted);
+    }
+
+    .sys-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-dim);
+      border-radius: 10px;
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-end;
+      font-family: var(--mono);
+      font-size: 12px;
+      gap: 4px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green-bright);
+      box-shadow: 0 0 8px var(--green-bright);
+      margin-right: 6px;
+    }
+
+    /* MAIN 2-COLUMN COCKPIT GRID */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.02fr 1.08fr;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-dim);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .panel.workspace-clamped {
+      border-color: var(--red);
+      box-shadow: inset 0 0 28px rgba(239, 68, 68, 0.16), 0 0 18px rgba(239, 68, 68, 0.2);
+    }
+
+    .panel-hdr {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      background: rgba(12, 23, 40, 0.65);
+    }
+
+    /* LEFT WORKSPACE */
+    .workspace-body {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #081322 0%, #03070e 85%);
+    }
+
+    #ws-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .clamp-badge {
+      position: absolute;
+      left: 16px;
+      bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(6, 12, 22, 0.86);
+      border: 1px solid var(--border-dim);
+      pointer-events: none;
+    }
+
+    .clamp-badge.active {
+      border-color: rgba(239, 68, 68, 0.7);
+      background: rgba(69, 10, 10, 0.72);
+    }
+
+    .scale-ruler {
+      position: absolute;
+      right: 18px;
+      bottom: 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    /* RIGHT STACK */
+    .right-stack {
+      display: grid;
+      grid-template-rows: auto 1fr auto auto;
+      gap: 9px;
+      min-height: 0;
+    }
+
+    .metrics-list {
+      padding: 6px 14px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1.3fr 1.1fr 1fr;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(22, 42, 69, 0.7);
+      font-size: 13px;
+    }
+
+    .metric-row:last-child { border-bottom: none; }
+
+    .m-label { color: #cbd5e1; font-weight: 500; }
+    .m-val { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--cyan); }
+    .m-val.green { color: var(--green-bright); }
+    .m-val.red { color: var(--red-bright); }
+    .m-right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); }
+
+    .mini-reset-btn {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: var(--red-bright);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .mini-reset-btn:hover { background: rgba(239, 68, 68, 0.25); }
+
+    /* OSCILLOSCOPE */
+    .osc-wrap {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 148px;
+      gap: 10px;
+      padding: 8px 12px;
+      align-items: stretch;
+    }
+
+    #osc-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #050b14;
+      border: 1px solid #12243b;
+      border-radius: 6px;
+    }
+
+    .osc-stats {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-family: var(--mono);
+      padding: 2px 4px;
+    }
+
+    .osc-stat-lbl { font-size: 10px; color: var(--text-muted); letter-spacing: 0.06em; }
+    .osc-stat-num { font-size: 17px; font-weight: 700; color: #f8fafc; margin-top: 2px; }
+
+    /* PROCESS TABLE */
+    .proc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 11.5px;
+    }
+    .proc-table th {
+      text-align: left;
+      padding: 5px 12px;
+      color: var(--text-muted);
+      font-size: 10px;
+      border-bottom: 1px solid var(--border-dim);
+    }
+    .proc-table td {
+      padding: 5px 12px;
+      border-bottom: 1px solid rgba(22, 42, 69, 0.45);
+    }
+    .proc-row-sup.clamped {
+      background: rgba(239, 68, 68, 0.16);
+      color: #fecaca;
+    }
+
+    /* FAULT CONTROLS */
+    .controls-bar {
+      display: grid;
+      grid-template-columns: 1.15fr 1.15fr 0.9fr;
+      gap: 10px;
+    }
+
+    .ctrl-btn {
+      border-radius: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-family: var(--sans);
+      transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+      text-align: left;
+    }
+    .ctrl-btn:active { transform: scale(0.985); }
+
+    .btn-fault-red {
+      background: rgba(127, 29, 29, 0.35);
+      border: 1.5px solid var(--red);
+      color: #fecaca;
+    }
+    .btn-fault-red:hover, .btn-fault-red.active {
+      background: rgba(185, 28, 28, 0.55);
+      box-shadow: 0 0 18px var(--red-glow);
+    }
+
+    .btn-fault-amber {
+      background: rgba(120, 53, 15, 0.32);
+      border: 1.5px solid var(--amber);
+      color: #fde68a;
+    }
+    .btn-fault-amber:hover, .btn-fault-amber.active {
+      background: rgba(180, 83, 9, 0.5);
+      box-shadow: 0 0 16px rgba(251, 191, 36, 0.25);
+    }
+
+    .btn-reset-green {
+      background: rgba(20, 83, 45, 0.38);
+      border: 1.5px solid var(--green);
+      color: #bbf7d0;
+    }
+    .btn-reset-green:hover {
+      background: rgba(22, 101, 52, 0.6);
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.25);
+    }
+
+    .btn-title { font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; display: block; }
+    .btn-sub { font-size: 9.5px; opacity: 0.85; letter-spacing: 0.06em; font-family: var(--mono); display: block; margin-top: 1px; }
+
+    /* BOTTOM 5-CARD TELEMETRY BAR */
+    .bottom-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-dim);
+      border-radius: 10px;
+      padding: 8px 14px;
+    }
+
+    .b-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-right: 1px solid var(--border-dim);
+      padding-right: 10px;
+    }
+    .b-card:last-child { border-right: none; padding-right: 0; }
+
+    .b-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: rgba(14, 165, 233, 0.1);
+      border: 1px solid rgba(34, 211, 238, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .b-lbl { font-size: 10px; color: var(--text-muted); letter-spacing: 0.07em; font-weight: 600; }
+    .b-num { font-family: var(--mono); font-size: 20px; font-weight: 800; color: var(--cyan); line-height: 1.15; margin: 1px 0; }
+    .b-sub { font-size: 10px; font-family: var(--mono); color: var(--text-muted); letter-spacing: 0.05em; }
+
+    .footer-line {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: #526985;
+    }
   </style>
 </head>
-<body class="h-screen overflow-hidden flex flex-col p-3 gap-2.5 select-none">
+<body>
 
-  <!-- Top Header Bar -->
-  <header class="panel rounded-xl px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
-    <div class="flex items-center gap-3">
-      <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" id="connDot"></div>
+  <!-- TOP STATUS & SAFETY CAGE HEADER -->
+  <header class="topbar">
+    <div class="brand-box">
+      <svg class="hex-logo" viewBox="0 0 40 40" fill="none">
+        <polygon points="20,2 36,11 36,29 20,38 4,29 4,11" stroke="#22d3ee" stroke-width="2.2" fill="rgba(34,211,238,0.1)" />
+        <circle cx="20" cy="20" r="6" stroke="#4ade80" stroke-width="2" />
+        <line x1="20" y1="6" x2="20" y2="14" stroke="#22d3ee" stroke-width="1.6" />
+        <line x1="20" y1="26" x2="20" y2="34" stroke="#22d3ee" stroke-width="1.6" />
+      </svg>
       <div>
-        <div class="flex items-center gap-2">
-          <h1 class="text-base font-bold tracking-tight text-white">NEUROGUARD-RT</h1>
-          <span class="text-[11px] mono px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40">QNX SDP 8.0 (procnto-smp-instr)</span>
-          <span class="text-[11px] mono px-2 py-0.5 rounded bg-purple-500/20 text-[10px]urple-300 border border-purple-500/40">/dev/surgical_arm</span>
-        </div>
-        <p class="text-[11px] text-slate-400">Zero-Trust Deterministic Microkernel Safety Cage for AI-Assisted Robotic Microsurgery</p>
+        <div class="brand-title">QNX SURGICAL ROBOTICS COCKPIT</div>
+        <div class="brand-sub">HARD REAL-TIME SAFETY CAGE (PRIORITY 250f)</div>
       </div>
     </div>
 
-    <!-- System Safety State Banner -->
-    <div id="stateBanner" class="px-3 py-1 rounded-lg border border-emerald-500/50 bg-emerald-500/10 flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full bg-emerald-400" id="stateDot"></span>
-      <span class="mono text-[11px] font-bold tracking-wider text-emerald-300" id="stateText">STATE 0: NOMINAL AI TREMOR FILTERING</span>
+    <div id="top-banner" class="status-banner">
+      <div class="banner-left">
+        <span id="banner-icon" style="font-size:24px;">🛡️</span>
+        <div>
+          <div id="banner-headline" class="banner-headline">NORMAL — AI TREMOR FILTER INSIDE SAFE ZONE</div>
+          <div id="banner-sub" class="banner-sub">1kHz WATCHDOG NOMINAL • BOUNDARY ENVELOPE R ≤ 18.00 mm</div>
+        </div>
+      </div>
+      <div class="banner-meta">
+        <div>SYSTEM MODE: <strong id="meta-mode" style="color:#4ade80;">NORMAL</strong></div>
+        <div>SAFETY ENVELOPE: <strong style="color:#22d3ee;">ACTIVE</strong></div>
+      </div>
     </div>
 
-    <!-- Fault Injection Action Buttons -->
-    <div class="flex items-center gap-2">
-      <button onclick="sendCommand('BOMB=1')"
-        class="px-3 py-1.5 rounded-lg font-semibold text-[11px] mono uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white border border-red-400 shadow-lg shadow-red-600/30 transition cursor-pointer">
-        ⚡ Inject CPU Starvation Bomb (BOMB=1)
-      </button>
-      <button onclick="sendCommand('BOMB=0')"
-        class="px-3 py-1.5 rounded-lg font-semibold text-[11px] mono uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 transition cursor-pointer">
-        ✓ Restore Nominal (BOMB=0)
-      </button>
-      <button onclick="resetCounters()"
-        class="px-2.5 py-1.5 rounded-lg font-semibold text-[11px] mono uppercase tracking-wider bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition cursor-pointer"
-        title="Reset RTOS Preemption Counter">
-        ↺ Reset
-      </button>
+    <div class="sys-box">
+      <div style="color:#cbd5e1;"><span id="src-label">QNX SDP v8.0</span> &nbsp;|&nbsp; UPTIME <span id="uptime-txt">00:00:00</span></div>
+      <div style="color:#4ade80;font-weight:700;"><span class="dot"></span>RT SAFETY CORE (250f FIFO)</div>
     </div>
   </header>
 
-  <!-- Main 12-Column Grid -->
-  <main class="grid grid-cols-1 lg:grid-cols-12 gap-2.5 flex-1 min-h-0">
+  <!-- MAIN 2-COLUMN COCKPIT -->
+  <main class="main-grid">
 
-    <!-- Left 5 Cols: Live 2D Surgical Kinematics & Artery Boundary Field -->
-    <section class="lg:col-span-5 panel rounded-xl p-3 flex flex-col justify-between min-h-0" id="canvasPanel">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-[10px]s font-bold text-white uppercase tracking-wider">Real-Time Surgical Workspace (100×100mm)</h2>
-          <p class="text-[11px] text-slate-400">Carotid Artery Exclusion Zone: <span class="mono text-red-400 font-semibold">R = 18.00 mm</span> (Hover/Drag to test)</p>
-        </div>
-        <div class="text-right mono">
-          <div class="text-[10px] text-slate-400 uppercase">Artery Clearance</div>
-          <div id="arteryDistVal" class="text-sm font-bold text-emerald-400">24.00 mm</div>
-        </div>
+    <!-- LEFT: REAL-TIME SURGICAL WORKSPACE -->
+    <section id="ws-panel" class="panel">
+      <div class="panel-hdr">
+        <span>⊕ REAL-TIME SURGICAL WORKSPACE (SAFE BOUNDARY R = 18.00 mm)</span>
+        <span style="color:#4ade80;font-family:var(--mono);font-size:11.5px;"><span class="dot"></span>LIVE 30Hz</span>
       </div>
+      <div class="workspace-body">
+        <canvas id="ws-canvas"></canvas>
 
-      <div class="relative flex-1 flex items-center justify-center my-1 min-h-0">
-        <canvas id="surgicalCanvas" width="360" height="360" class="rounded-lg bg-slate-950 border border-slate-800 max-h-full aspect-square cursor-crosshair"></canvas>
-      </div>
-
-      <!-- Legend -->
-      <div class="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-800 text-[11px]">
-        <div class="flex items-center gap-1.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block shrink-0"></span>
-          <span class="text-slate-300 truncate">Raw Surgeon (10Hz)</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block shrink-0"></span>
-          <span class="text-slate-300 truncate">AI MLP (Prio 15r)</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block shrink-0"></span>
-          <span class="text-white font-semibold truncate">QNX Cage (250f)</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Right 7 Cols: KPI Telemetry Cards, Oscilloscopes & Live QNX pidin Table -->
-    <section class="lg:col-span-7 flex flex-col gap-2.5 min-h-0">
-
-      <!-- 4 Real-Time KPI Cards -->
-      <div class="grid grid-cols-4 gap-2.5 shrink-0">
-        <div class="panel rounded-xl p-2.5">
-          <div class="text-[11px] text-slate-400">QNX 250f IPC Jitter</div>
-          <div class="mono text-[10px]l font-bold text-emerald-400 mt-0.5" id="kpiQnxJitter">1,240 ns</div>
-          <div class="text-[10px] text-slate-500 mt-0.5">Via <span class="mono text-slate-300">ClockCycles()</span></div>
-        </div>
-
-        <div class="panel rounded-xl p-2.5">
-          <div class="text-[11px] text-slate-400">Linux CFS Host Jitter</div>
-          <div class="mono text-[10px]l font-bold text-amber-400 mt-0.5" id="kpiLinuxJitter">84,200 ns</div>
-          <div class="text-[10px] text-amber-300/80 mt-0.5" id="kpiJitterRatio">67.9× higher jitter on Linux</div>
-        </div>
-
-        <div class="panel rounded-xl p-2.5">
-          <div class="text-[11px] text-slate-400">AI Inference Latency</div>
-          <div class="mono text-[10px]l font-bold text-cyan-400 mt-0.5" id="kpiAiLatency">48 µs</div>
-          <div class="text-[10px] text-slate-500 mt-0.5">Hard Limit: <span class="mono text-red-400">850 µs</span></div>
-        </div>
-
-        <div class="panel rounded-xl p-2.5">
-          <div class="text-[11px] text-slate-400">RTOS Preemptions</div>
-          <div class="mono text-[10px]l font-bold text-[10px]urple-400 mt-0.5" id="kpiInterventions">0</div>
-          <div class="text-[10px] text-slate-500 mt-0.5">Collisions prevented</div>
-        </div>
-      </div>
-
-      <!-- Dual Live Oscilloscopes -->
-      <div class="panel rounded-xl p-3 flex-1 flex flex-col justify-between min-h-0">
-        <div class="flex items-center justify-between mb-1">
+        <div id="clamp-badge" class="clamp-badge">
+          <span id="clamp-badge-icon" style="font-size:20px;">🛡️</span>
           <div>
-            <h3 class="text-[10px]s font-bold text-white uppercase tracking-wider">Deterministic Scheduling Oscilloscope (QNX 8.0 SCHED_FIFO vs. AI Starvation)</h3>
-            <p class="text-[11px] text-slate-400">Green: QNX Priority-250 Supervisor Jitter (~1.2 µs) &nbsp;|&nbsp; Cyan/Red: AI Inference Loop Latency (µs)</p>
+            <div id="clamp-badge-title" style="font-size:12px;font-weight:800;color:#4ade80;letter-spacing:0.05em;">SAFE ENVELOPE MONITORED</div>
+            <div id="clamp-badge-sub" style="font-size:10px;font-family:var(--mono);color:#94a3b8;">AI DECISION LAYER: (<span id="ai-xy-txt">11.2, 0.0</span>) mm</div>
           </div>
-          <span class="mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">20 Hz QNX TCP :8080</span>
         </div>
-        <canvas id="scopeCanvas" width="720" height="150" class="w-full flex-1 rounded-lg bg-slate-950 border border-slate-800 min-h-0"></canvas>
-      </div>
 
-      <!-- QNX 8.0 Microkernel Process & IPC Architecture Table -->
-      <div class="panel rounded-xl p-3 shrink-0">
-        <div class="flex items-center justify-between mb-1.5">
-          <h3 class="text-[10px]s font-bold text-white uppercase tracking-wider">Live QNX 8.0 Microkernel Process Table (<span class="mono text-sky-400">pidin</span>)</h3>
-          <span class="mono text-[11px] text-slate-400">Channel Flag: <span class="text-emerald-400 font-semibold">_NTO_CHF_FIXED_PRIORITY</span></span>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse mono text-[11px]">
-            <thead>
-              <tr class="border-b border-slate-800 text-slate-400">
-                <th class="py-1 px-1.5 whitespace-nowrap">Process Binary</th>
-                <th class="py-1 px-1.5 whitespace-nowrap">QNX Role / Attach Point</th>
-                <th class="py-1 px-1.5 whitespace-nowrap">Policy & Priority</th>
-                <th class="py-1 px-1.5 whitespace-nowrap">Kernel State</th>
-                <th class="py-1 px-1.5 whitespace-nowrap">Live Telemetry</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800/60">
-              <tr class="bg-emerald-950/20">
-                <td class="py-1.5 px-1.5 whitespace-nowrap font-bold text-emerald-300">/data/bin/safety_supervisor</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-300">name_attach(neuroguard_supervisor)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap"><span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">250f (SCHED_FIFO)</span></td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-emerald-400" id="procStateSup">RECEIVE (Deterministic)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-emerald-300 font-semibold" id="procSupMetric">0.00 ms deadline miss</td>
-              </tr>
-              <tr>
-                <td class="py-1.5 px-1.5 whitespace-nowrap font-bold text-sky-300">/data/bin/surgical_arm_resmgr</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-300">POSIX Resource Mgr (/dev/surgical_arm)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap"><span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">60f (SCHED_FIFO)</span></td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-sky-400">RECEIVE</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-300" id="procResMetric">io_read / io_write active</td>
-              </tr>
-              <tr>
-                <td class="py-1.5 px-1.5 whitespace-nowrap font-bold text-cyan-300">/data/bin/ai_tremor_engine</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-300">MLP Filter + MsgSend() Client</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap"><span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">15r (SCHED_RR)</span></td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-cyan-400" id="procStateAi">NANOSLEEP (60Hz)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-300" id="procAiMetric">48 µs nominal</td>
-              </tr>
-              <tr>
-                <td class="py-1.5 px-1.5 whitespace-nowrap font-bold text-slate-400">└─ cpu_bomb_worker (TID 2)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-400">CPU Starvation Fault Thread</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap"><span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">25r (SCHED_RR)</span></td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-400" id="procStateBomb">IDLE (BOMB=0)</td>
-                <td class="py-1.5 px-1.5 whitespace-nowrap text-slate-400" id="procBombMetric">Standby</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="scale-ruler">
+          <div style="border-bottom:1.5px solid #64748b;border-left:1.5px solid #64748b;border-right:1.5px solid #64748b;height:6px;width:110px;margin-bottom:3px;"></div>
+          <div style="display:flex;justify-content:space-between;width:110px;"><span>0.00</span><span>18.00 mm</span></div>
         </div>
       </div>
-
     </section>
+
+    <!-- RIGHT: METRICS + OSCILLOSCOPE + QNX PROCESS TABLE + FAULT CONTROLS -->
+    <div class="right-stack">
+
+      <!-- 1. LIVE METRICS -->
+      <section class="panel">
+        <div class="panel-hdr">
+          <span>∿ LIVE METRICS (HARDWARE CLOCKCYCLES)</span>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">DEADLINE: 2,500 µs</span>
+        </div>
+        <div class="metrics-list">
+          <div class="metric-row">
+            <span class="m-label">AI Layer Inference Latency</span>
+            <span id="m-ai-lat" class="m-val">12.30 µs</span>
+            <div class="m-right"><canvas id="spark-ai" width="110" height="22"></canvas></div>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Supervisor Reaction (Latest / p99)</span>
+            <span id="m-react" class="m-val green">1.44 µs <small style="font-size:12px;color:#94a3b8;">/ 1.84 µs</small></span>
+            <div class="m-right"><canvas id="spark-sup" width="90" height="22"></canvas><span>(&lt;2.0 µs)</span></div>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Missed Deadlines / Clamp Trips</span>
+            <span id="m-missed" class="m-val">0</span>
+            <div class="m-right">
+              <button class="mini-reset-btn" onclick="sendCtrl('RESET')">RESET COUNTER ↻</button>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Active QNX Ceiling Priority</span>
+            <span class="m-val" style="color:#f8fafc;">250f <small style="font-size:11px;color:#38bdf8;">SCHED_FIFO</small></span>
+            <div class="m-right" style="color:#4ade80;">SAFETY SUPERVISOR ●</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. REAL-TIME JITTER OSCILLOSCOPE -->
+      <section class="panel" style="min-height:0;">
+        <div class="panel-hdr">
+          <span>∿ REAL-TIME JITTER OSCILLOSCOPE (QNX 250f WATCHDOG)</span>
+          <span style="font-family:var(--mono);font-size:11px;color:#4ade80;">_NTO_CHF_FIXED_PRIORITY</span>
+        </div>
+        <div class="osc-wrap">
+          <canvas id="osc-canvas"></canvas>
+          <div class="osc-stats">
+            <div>
+              <div class="osc-stat-lbl">PEAK TO PEAK</div>
+              <div id="osc-p2p" class="osc-stat-num">1.37 µs</div>
+            </div>
+            <div>
+              <div class="osc-stat-lbl">RMS JITTER</div>
+              <div id="osc-rms" class="osc-stat-num" style="color:#22d3ee;">0.23 µs</div>
+            </div>
+            <div style="font-size:11px;color:#4ade80;font-weight:700;">SYNC: HARDWARE</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. LIVE QNX PROCESS TABLE -->
+      <section class="panel">
+        <div class="panel-hdr">
+          <span>∿ LIVE QNX 8.0 MICROKERNEL PROCESS TABLE</span>
+          <span style="font-family:var(--mono);font-size:10.5px;color:var(--text-muted);">procnto-smp-instr x86_64</span>
+        </div>
+        <table class="proc-table">
+          <thead>
+            <tr><th>PID</th><th>PROCESS NAME</th><th>PRIORITY</th><th>STATE</th><th>ROLE</th></tr>
+          </thead>
+          <tbody>
+            <tr id="row-sup" class="proc-row-sup">
+              <td id="pid-sup">294931</td>
+              <td style="font-weight:700;">safety_supervisor</td>
+              <td style="color:#4ade80;font-weight:700;">250f (FIFO)</td>
+              <td id="st-sup" style="color:#4ade80;font-weight:700;">RECEIVE</td>
+              <td>Hard Safety Cage</td>
+            </tr>
+            <tr>
+              <td id="pid-resmgr">282642</td>
+              <td>surgical_arm_resmgr</td>
+              <td style="color:#38bdf8;">60f (FIFO)</td>
+              <td>RECEIVE</td>
+              <td>/dev/surgical_arm</td>
+            </tr>
+            <tr id="row-ai">
+              <td id="pid-ai">307220</td>
+              <td>ai_tremor_engine</td>
+              <td style="color:#fbbf24;">20r (RR)</td>
+              <td id="st-ai">READY</td>
+              <td>Untrusted Elman MLP</td>
+            </tr>
+            <tr>
+              <td>319509</td>
+              <td>telemetry_bridge</td>
+              <td style="color:#94a3b8;">12r (RR)</td>
+              <td>NANOSLEEP</td>
+              <td>io-sock TCP :8080</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 4. FAULT INJECTION & RESET CONTROLS -->
+      <div class="controls-bar">
+        <button id="btn-starve" class="ctrl-btn btn-fault-red" onclick="sendCtrl('STARVE=1')">
+          <span style="font-size:20px;">⚠️</span>
+          <span>
+            <span class="btn-title">STARVE AI THREAD [S]</span>
+            <span class="btn-sub">PRIO-35r CPU HOG • TIMEOUT</span>
+          </span>
+        </button>
+
+        <button id="btn-unsafe" class="ctrl-btn btn-fault-amber" onclick="sendCtrl('UNSAFE=1')">
+          <span style="font-size:20px;">⚡</span>
+          <span>
+            <span class="btn-title">FORCE UNSAFE AI [U]</span>
+            <span class="btn-sub">COMMAND R = 25.4 mm BREACH</span>
+          </span>
+        </button>
+
+        <button id="btn-reset" class="ctrl-btn btn-reset-green" onclick="sendCtrl('RESET')">
+          <span style="font-size:20px;">↻</span>
+          <span>
+            <span class="btn-title">RESET CAGE [R]</span>
+            <span class="btn-sub">CLEAR FAULT STATE</span>
+          </span>
+        </button>
+      </div>
+
+    </div>
   </main>
 
+  <!-- BOTTOM 5-CARD TELEMETRY STRIP -->
+  <section class="bottom-strip">
+    <div class="b-card">
+      <div class="b-icon">⊕</div>
+      <div>
+        <div class="b-lbl">TOOL POSITION</div>
+        <div class="b-num"><span id="b-radius">11.20</span> <small style="font-size:13px;">mm</small></div>
+        <div id="b-radius-sub" class="b-sub">RADIUS FROM CENTER</div>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-icon">🛡️</div>
+      <div>
+        <div class="b-lbl">BOUNDARY CLEARANCE</div>
+        <div class="b-num"><span id="b-offset">6.80</span> <small style="font-size:13px;">mm</small></div>
+        <div id="b-offset-sub" class="b-sub">OFFSET FROM R=18.00</div>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-icon" style="color:#4ade80;border-color:rgba(74,222,128,0.35);">∿</div>
+      <div>
+        <div class="b-lbl">SCALPEL TIP FORCE</div>
+        <div class="b-num" style="color:#4ade80;"><span id="b-force">0.12</span> <small style="font-size:13px;">N</small></div>
+        <div id="b-force-sub" class="b-sub" style="color:#4ade80;">SAFE CONTACT</div>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-icon">♡</div>
+      <div>
+        <div class="b-lbl">AI HEARTBEAT AGE</div>
+        <div id="b-hb-wrap" class="b-num"><span id="b-hb">0.80</span> <small style="font-size:13px;">ms</small></div>
+        <div id="b-hb-sub" class="b-sub">WATCHDOG LIMIT: 2.5 ms</div>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-icon" style="color:#4ade80;border-color:rgba(74,222,128,0.35);">✔</div>
+      <div>
+        <div class="b-lbl">SAFETY CAGE INTEGRITY</div>
+        <div class="b-num" style="color:#4ade80;">100%</div>
+        <div id="b-int-sub" class="b-sub">ZERO BOUNDARY BREACHES</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer-line">
+    QNX SDP 8.0 REAL-TIME SAFETY SYSTEM &nbsp;|&nbsp; IEC 62304 / ISO 61508 DETERMINISTIC SUPERVISOR ARCHITECTURE &nbsp;|&nbsp; SHORTCUTS: [S] STARVE AI • [U] UNSAFE AI • [R] RESET
+  </div>
+
   <script>
-    const surgicalCanvas = document.getElementById('surgicalCanvas');
-    const sCtx = surgicalCanvas.getContext('2d');
-    const scopeCanvas = document.getElementById('scopeCanvas');
-    const oCtx = scopeCanvas.getContext('2d');
+    const SAFE_R_MM = 18.00;
+    const VIEW_EXTENT_MM = 27.5; // Fits R=18mm ring cleanly + shows rogue R=25.4mm AI excursions outside
 
-    const rawTrail = [];
-    const aiTrail = [];
-    const safeTrail = [];
-    const MAX_TRAIL = 42;
+    const trailSafe = [];
+    const oscHistory = new Array(110).fill(0.0);
+    const sparkAiHist = new Array(40).fill(12.3);
+    const sparkSupHist = new Array(40).fill(1.45);
 
-    const jitterHistory = new Array(120).fill(1.2);
-    const aiLatencyHistory = new Array(120).fill(48);
-    let baselineInterventions = null;
-    let manualCursor = null;
+    let latest = {
+      state: 0, fault_mode: 0, fault_reason: 0,
+      raw_x: 11.2, raw_y: 0, ai_x: 11.2, ai_y: 0, x: 11.2, y: 0,
+      radius_mm: 11.2, offset_mm: 6.8, tip_force_n: 0.12,
+      ai_latency_us: 12.3, reaction_us: 1.44, p99_reaction_us: 1.84,
+      osc_sample_us: 0.08, p2p_jitter_us: 1.37, rms_jitter_us: 0.23,
+      heartbeat_age_ms: 0.8, missed_deadlines: 0,
+      sup_pid: 294931, ai_pid: 307220, resmgr_pid: 282642, uptime_s: 0, qnx_live: false
+    };
 
-    surgicalCanvas.addEventListener('mousemove', (e) => {
-      const rect = surgicalCanvas.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100.0;
-      const y = ((e.clientY - rect.top) / rect.height) * 100.0;
-      manualCursor = { x, y };
-    });
-    surgicalCanvas.addEventListener('mouseleave', () => {
-      manualCursor = null;
-    });
-
-    async function sendCommand(cmd) {
+    async function sendCtrl(cmd) {
       try {
-        await fetch('/api/command', {
+        await fetch('/api/fault', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cmd })
         });
-      } catch (e) { console.error(e); }
+      } catch (e) {}
     }
 
-    function resetCounters() {
-      baselineInterventions = null;
-      sendCommand('RESET');
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 's' || e.key === 'S') sendCtrl('STARVE=1');
+      if (e.key === 'u' || e.key === 'U') sendCtrl('UNSAFE=1');
+      if (e.key === 'r' || e.key === 'R') sendCtrl('RESET');
+    });
+
+    function fmtUptime(sec) {
+      const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+      const s = String(sec % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
     }
 
-    function drawSurgicalField(data) {
-      const W = surgicalCanvas.width;
-      const H = surgicalCanvas.height;
-      const scale = W / 100.0;
-
-      sCtx.clearRect(0, 0, W, H);
-
-      sCtx.strokeStyle = 'rgba(30, 41, 59, 0.75)';
-      sCtx.lineWidth = 1;
-      for (let i = 10; i < 100; i += 10) {
-        sCtx.beginPath();
-        sCtx.moveTo(i * scale, 0); sCtx.lineTo(i * scale, H);
-        sCtx.moveTo(0, i * scale); sCtx.lineTo(W, i * scale);
-        sCtx.stroke();
+    function drawSparkline(canvasId, arr, color, minV, maxV) {
+      const c = document.getElementById(canvasId);
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (let i = 0; i < arr.length; i++) {
+        const xp = (i / (arr.length - 1)) * c.width;
+        const norm = Math.max(0, Math.min(1, (arr[i] - minV) / (maxV - minV)));
+        const yp = c.height - 3 - norm * (c.height - 6);
+        if (i === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
       }
-
-      const cx = 50 * scale;
-      const cy = 50 * scale;
-      const safeRadiusPx = 18.0 * scale;
-
-      sCtx.beginPath();
-      sCtx.arc(cx, cy, 24.0 * scale, 0, Math.PI * 2);
-      sCtx.strokeStyle = 'rgba(245, 158, 11, 0.25)';
-      sCtx.setLineDash([4, 4]);
-      sCtx.stroke();
-      sCtx.setLineDash([]);
-
-      const isOverride = data.state === 2 || data.bomb === 1;
-
-      sCtx.beginPath();
-      sCtx.arc(cx, cy, safeRadiusPx, 0, Math.PI * 2);
-      sCtx.fillStyle = isOverride ? 'rgba(239, 68, 68, 0.28)' : 'rgba(239, 68, 68, 0.14)';
-      sCtx.fill();
-      sCtx.lineWidth = isOverride ? 3 : 2;
-      sCtx.strokeStyle = isOverride ? '#ef4444' : 'rgba(239, 68, 68, 0.8)';
-      sCtx.stroke();
-
-      sCtx.beginPath();
-      sCtx.arc(cx, cy, 10.0 * scale, 0, Math.PI * 2);
-      sCtx.fillStyle = 'rgba(220, 38, 38, 0.65)';
-      sCtx.fill();
-
-      sCtx.fillStyle = '#fca5a5';
-      sCtx.font = 'bold 10px JetBrains Mono';
-      sCtx.textAlign = 'center';
-      sCtx.fillText('CAROTID ARTERY', cx, cy - 2);
-      sCtx.font = '9px JetBrains Mono';
-      sCtx.fillText('HARD CAGE R=18mm', cx, cy + 10);
-
-      function drawTrail(trail, color, width) {
-        if (trail.length < 2) return;
-        sCtx.beginPath();
-        for (let i = 0; i < trail.length; i++) {
-          const px = trail[i].x * scale;
-          const py = trail[i].y * scale;
-          if (i === 0) sCtx.moveTo(px, py);
-          else sCtx.lineTo(px, py);
-        }
-        sCtx.strokeStyle = color;
-        sCtx.lineWidth = width;
-        sCtx.stroke();
-      }
-
-      drawTrail(rawTrail, 'rgba(251, 191, 36, 0.45)', 1.5);
-      drawTrail(aiTrail, data.bomb ? 'rgba(239, 68, 68, 0.85)' : 'rgba(34, 211, 238, 0.6)', 2);
-      drawTrail(safeTrail, '#10b981', 2.8);
-
-      const aiPx = (data.ai_x ?? data.x) * scale;
-      const aiPy = (data.ai_y ?? data.y) * scale;
-      const safePx = data.x * scale;
-      const safePy = data.y * scale;
-
-      if (isOverride) {
-        sCtx.beginPath();
-        sCtx.moveTo(aiPx, aiPy);
-        sCtx.lineTo(safePx, safePy);
-        sCtx.strokeStyle = '#f43f5e';
-        sCtx.lineWidth = 2;
-        sCtx.setLineDash([3, 3]);
-        sCtx.stroke();
-        sCtx.setLineDash([]);
-      }
-
-      sCtx.beginPath();
-      sCtx.arc((data.raw_x ?? data.x) * scale, (data.raw_y ?? data.y) * scale, 3.5, 0, Math.PI * 2);
-      sCtx.fillStyle = '#fbbf24';
-      sCtx.fill();
-
-      sCtx.beginPath();
-      sCtx.arc(aiPx, aiPy, 4.5, 0, Math.PI * 2);
-      sCtx.fillStyle = data.bomb ? '#ef4444' : '#22d3ee';
-      sCtx.fill();
-
-      sCtx.beginPath();
-      sCtx.arc(safePx, safePy, 6.5, 0, Math.PI * 2);
-      sCtx.fillStyle = '#10b981';
-      sCtx.fill();
-      sCtx.lineWidth = 2;
-      sCtx.strokeStyle = '#ffffff';
-      sCtx.stroke();
+      ctx.stroke();
     }
 
-    function drawOscilloscope(data) {
-      const W = scopeCanvas.width;
-      const H = scopeCanvas.height;
-      oCtx.clearRect(0, 0, W, H);
+    function updateDOM(d) {
+      const clamped = (d.state === 2);
 
-      oCtx.strokeStyle = 'rgba(30, 41, 59, 0.8)';
-      oCtx.lineWidth = 1;
-      for (let y = 30; y < H; y += 35) {
-        oCtx.beginPath();
-        oCtx.moveTo(0, y); oCtx.lineTo(W, y);
-        oCtx.stroke();
+      document.getElementById('src-label').textContent = d.qnx_live ? 'QNX SDP v8.0 (LIVE)' : 'QNX SDP v8.0 (TWIN)';
+      document.getElementById('uptime-txt').textContent = fmtUptime(d.uptime_s || 0);
+
+      const banner = document.getElementById('top-banner');
+      const wsPanel = document.getElementById('ws-panel');
+      const badge = document.getElementById('clamp-badge');
+
+      banner.classList.toggle('clamped', clamped);
+      wsPanel.classList.toggle('workspace-clamped', clamped);
+      badge.classList.toggle('active', clamped);
+
+      document.getElementById('btn-starve').classList.toggle('active', d.fault_mode === 1);
+      document.getElementById('btn-unsafe').classList.toggle('active', d.fault_mode === 2);
+
+      if (clamped) {
+        document.getElementById('banner-icon').textContent = '⚠️';
+        document.getElementById('banner-headline').textContent = 'SAFE CLAMPED – FAULT DETECTED';
+        const reasonTxt = d.fault_reason === 1
+          ? 'AI HEARTBEAT WATCHDOG TIMEOUT (>2.50 ms) — TIP LOCKED TO SAFE BOUNDARY'
+          : 'UNSAFE AI TRAJECTORY INTERCEPTED — TIP POSITION LOCKED TO R = 18.00 mm';
+        document.getElementById('banner-sub').textContent = reasonTxt;
+        const mm = document.getElementById('meta-mode');
+        mm.textContent = 'SAFE CLAMPED';
+        mm.style.color = '#f87171';
+
+        document.getElementById('clamp-badge-icon').textContent = '🛑';
+        const cbt = document.getElementById('clamp-badge-title');
+        cbt.textContent = 'SAFE CLAMPED';
+        cbt.style.color = '#f87171';
+        document.getElementById('clamp-badge-sub').textContent = 'INSTRUMENT POSITION LOCKED TO SAFE BOUNDARY';
+      } else {
+        document.getElementById('banner-icon').textContent = '🛡️';
+        document.getElementById('banner-headline').textContent = 'NORMAL — AI TREMOR FILTER INSIDE SAFE ZONE';
+        document.getElementById('banner-sub').textContent = '1kHz WATCHDOG NOMINAL • SAFE SURGICAL BOUNDARY R ≤ 18.00 mm';
+        const mm = document.getElementById('meta-mode');
+        mm.textContent = 'NORMAL';
+        mm.style.color = '#4ade80';
+
+        document.getElementById('clamp-badge-icon').textContent = '🛡️';
+        const cbt = document.getElementById('clamp-badge-title');
+        cbt.textContent = 'SAFE ENVELOPE NOMINAL';
+        cbt.style.color = '#4ade80';
+        document.getElementById('clamp-badge-sub').innerHTML = `AI DECISION: (${d.ai_x.toFixed(1)}, ${d.ai_y.toFixed(1)}) mm`;
       }
 
-      const deadlineY = H - 90;
-      oCtx.beginPath();
-      oCtx.moveTo(0, deadlineY); oCtx.lineTo(W, deadlineY);
-      oCtx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
-      oCtx.setLineDash([4, 4]);
-      oCtx.stroke();
-      oCtx.setLineDash([]);
-      oCtx.fillStyle = '#f87171';
-      oCtx.font = '10px JetBrains Mono';
-      oCtx.fillText('850 µs HARD RTOS DEADLINE THRESHOLD', 10, deadlineY - 5);
+      const aiEl = document.getElementById('m-ai-lat');
+      aiEl.textContent = `${d.ai_latency_us.toFixed(2)} µs`;
+      aiEl.className = d.ai_latency_us > 850 ? 'm-val red' : 'm-val';
 
-      oCtx.beginPath();
-      for (let i = 0; i < aiLatencyHistory.length; i++) {
-        const x = (i / (aiLatencyHistory.length - 1)) * W;
-        const val = aiLatencyHistory[i];
-        const norm = Math.min(1.0, Math.log10(Math.max(10, val)) / 4.8);
-        const y = H - 14 - norm * (H - 30);
-        if (i === 0) oCtx.moveTo(x, y);
-        else oCtx.lineTo(x, y);
-      }
-      oCtx.strokeStyle = data.bomb ? '#ef4444' : '#22d3ee';
-      oCtx.lineWidth = 2.2;
-      oCtx.stroke();
+      document.getElementById('m-react').innerHTML =
+        `${d.reaction_us.toFixed(2)} µs <small style="font-size:12px;color:#94a3b8;">/ p99: ${d.p99_reaction_us.toFixed(2)} µs</small>`;
 
-      oCtx.beginPath();
-      for (let i = 0; i < jitterHistory.length; i++) {
-        const x = (i / (jitterHistory.length - 1)) * W;
-        const valUs = jitterHistory[i];
-        const y = H - 10 - Math.min(25, valUs * 4.5);
-        if (i === 0) oCtx.moveTo(x, y);
-        else oCtx.lineTo(x, y);
+      const missEl = document.getElementById('m-missed');
+      missEl.textContent = d.missed_deadlines;
+      missEl.className = d.missed_deadlines > 0 ? 'm-val red' : 'm-val green';
+
+      document.getElementById('osc-p2p').textContent = `${d.p2p_jitter_us.toFixed(2)} µs`;
+      document.getElementById('osc-rms').textContent = `${d.rms_jitter_us.toFixed(2)} µs`;
+
+      document.getElementById('pid-sup').textContent = d.sup_pid || 294931;
+      document.getElementById('pid-resmgr').textContent = d.resmgr_pid || 282642;
+      document.getElementById('pid-ai').textContent = d.ai_pid || 307220;
+
+      const rowSup = document.getElementById('row-sup');
+      rowSup.classList.toggle('clamped', clamped);
+      const stSup = document.getElementById('st-sup');
+      stSup.textContent = clamped ? 'CLAMPING (ACTIVE)' : 'RECEIVE';
+      stSup.style.color = clamped ? '#f87171' : '#4ade80';
+
+      const stAi = document.getElementById('st-ai');
+      if (d.fault_mode === 1) {
+        stAi.textContent = 'STARVED (PRIO 35r)';
+        stAi.style.color = '#f87171';
+      } else if (d.fault_mode === 2) {
+        stAi.textContent = 'CORRUPTED OUTPUT';
+        stAi.style.color = '#fbbf24';
+      } else {
+        stAi.textContent = 'READY (1kHz)';
+        stAi.style.color = '#cbd5e1';
       }
-      oCtx.strokeStyle = '#10b981';
-      oCtx.lineWidth = 2.5;
-      oCtx.stroke();
+
+      document.getElementById('b-radius').textContent = d.radius_mm.toFixed(2);
+      document.getElementById('b-radius-sub').textContent = clamped ? 'RADIUS (LOCKED BOUNDARY)' : 'RADIUS FROM CENTER';
+      document.getElementById('b-offset').textContent = d.offset_mm.toFixed(2);
+      document.getElementById('b-offset-sub').textContent = clamped ? 'CLAMPED AT PERIMETER' : 'OFFSET FROM BOUNDARY';
+      document.getElementById('b-force').textContent = d.tip_force_n.toFixed(2);
+      document.getElementById('b-force-sub').textContent = clamped ? 'ZERO FORCE LOCK' : 'SAFE TISSUE CONTACT';
+
+      const hbWrap = document.getElementById('b-hb-wrap');
+      document.getElementById('b-hb').textContent = d.heartbeat_age_ms.toFixed(2);
+      hbWrap.style.color = d.heartbeat_age_ms > 2.5 ? '#f87171' : '#22d3ee';
     }
 
-    async function pollTelemetry() {
+    function drawWorkspace() {
+      const c = document.getElementById('ws-canvas');
+      const rect = c.parentElement.getBoundingClientRect();
+      if (c.width !== Math.floor(rect.width) || c.height !== Math.floor(rect.height)) {
+        c.width = Math.floor(rect.width);
+        c.height = Math.floor(rect.height);
+      }
+      const ctx = c.getContext('2d');
+      const w = c.width, h = c.height;
+      const cx = w / 2, cy = h / 2;
+      const pxPerMm = (Math.min(w, h) * 0.44) / VIEW_EXTENT_MM;
+      const safePx = SAFE_R_MM * pxPerMm;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle surgical polar grid
+      ctx.strokeStyle = 'rgba(30, 58, 95, 0.35)';
+      ctx.lineWidth = 1;
+      [6, 12, 24].forEach(rmm => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, rmm * pxPerMm, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      ctx.beginPath();
+      ctx.moveTo(cx - safePx * 1.35, cy); ctx.lineTo(cx + safePx * 1.35, cy);
+      ctx.moveTo(cx, cy - safePx * 1.35); ctx.lineTo(cx, cy + safePx * 1.35);
+      ctx.stroke();
+
+      // Organic surgical cavity nebula glow inside R=18mm
+      const grad = ctx.createRadialGradient(cx - safePx * 0.18, cy + safePx * 0.12, 8, cx, cy, safePx);
+      grad.addColorStop(0, 'rgba(56, 189, 248, 0.13)');
+      grad.addColorStop(0.65, 'rgba(15, 35, 62, 0.18)');
+      grad.addColorStop(1, 'rgba(4, 10, 20, 0.02)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, safePx, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glowing Cyan R = 18.00 mm Safe Boundary Ring
+      const clamped = (latest.state === 2);
+      ctx.save();
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = clamped ? '#ef4444' : '#22d3ee';
+      ctx.strokeStyle = clamped ? '#f87171' : '#22d3ee';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.arc(cx, cy, safePx, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // R = 18.00 mm label inside upper-right quadrant
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '600 13px "JetBrains Mono", monospace';
+      ctx.fillText('R = 18.00 mm', cx + safePx * 0.18, cy - safePx * 0.68);
+
+      const rawPxX = cx + latest.raw_x * pxPerMm;
+      const rawPxY = cy - latest.raw_y * pxPerMm;
+      const aiPxX  = cx + latest.ai_x * pxPerMm;
+      const aiPxY  = cy - latest.ai_y * pxPerMm;
+      const safePxX = cx + latest.x * pxPerMm;
+      const safePxY = cy - latest.y * pxPerMm;
+
+      // Safe tool motion ribbon
+      trailSafe.push({ x: safePxX, y: safePxY });
+      if (trailSafe.length > 45) trailSafe.shift();
+      if (trailSafe.length > 2) {
+        ctx.strokeStyle = clamped ? 'rgba(248, 113, 113, 0.35)' : 'rgba(34, 211, 238, 0.38)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        trailSafe.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+      }
+
+      // Raw 10Hz Surgeon Tremor Ghost Dot
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.55)';
+      ctx.beginPath();
+      ctx.arc(rawPxX, rawPxY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // If AI commands an unsafe excursion outside R=18mm, draw rejected rogue vector!
+      if (clamped) {
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(safePxX, safePxY);
+        ctx.lineTo(aiPxX, aiPxY);
+        ctx.stroke();
+        ctx.restore();
+
+        // Red scalpel probe wedge + glowing clamp reticle locked on boundary
+        const ang = Math.atan2(safePxY - cy, safePxX - cx);
+        ctx.save();
+        ctx.translate(safePxX, safePxY);
+        ctx.rotate(ang);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.78)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(44, -6);
+        ctx.lineTo(48, 0);
+        ctx.lineTo(44, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.shadowBlur = 22;
+        ctx.shadowColor = '#ef4444';
+        ctx.strokeStyle = '#f87171';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(safePxX, safePxY, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(safePxX - 8, safePxY); ctx.lineTo(safePxX + 8, safePxY);
+        ctx.moveTo(safePxX, safePxY - 8); ctx.lineTo(safePxX, safePxY + 8);
+        ctx.stroke();
+      } else {
+        // Nominal glowing cyan/emerald surgical end-effector
+        ctx.save();
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = '#4ade80';
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.arc(safePxX, safePxY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function drawOscilloscope() {
+      const c = document.getElementById('osc-canvas');
+      const rect = c.getBoundingClientRect();
+      if (c.width !== Math.floor(rect.width) || c.height !== Math.floor(rect.height)) {
+        c.width = Math.floor(rect.width);
+        c.height = Math.floor(rect.height);
+      }
+      const ctx = c.getContext('2d');
+      const w = c.width, h = c.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 38, padR = 10, padT = 10, padB = 18;
+      const pw = w - padL - padR;
+      const ph = h - padT - padB;
+      const midY = padT + ph / 2;
+
+      // Grid lines (-2.0, -1.0, 0, +1.0, +2.0 us)
+      ctx.strokeStyle = 'rgba(30, 58, 95, 0.45)';
+      ctx.fillStyle = '#7c93b0';
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.lineWidth = 1;
+
+      [-2, -1, 0, 1, 2].forEach(v => {
+        const y = midY - (v / 2.0) * (ph / 2);
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + pw, y);
+        ctx.stroke();
+        const lbl = v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+        ctx.fillText(lbl, 4, y + 3);
+      });
+
+      // X-axis labels
+      ctx.fillText('-5.0 ms', padL, h - 4);
+      ctx.fillText('0', padL + pw * 0.5 - 4, h - 4);
+      ctx.fillText('+5.0 ms', padL + pw - 44, h - 4);
+
+      // Cyan hardware jitter waveform
+      ctx.save();
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#22d3ee';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < oscHistory.length; i++) {
+        const x = padL + (i / (oscHistory.length - 1)) * pw;
+        const clampedVal = Math.max(-2.0, Math.min(2.0, oscHistory[i]));
+        const y = midY - (clampedVal / 2.0) * (ph / 2);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    async function pollLoop() {
       try {
-        const res = await fetch('/api/telemetry');
-        const data = await res.json();
+        const res = await fetch('/api/telemetry', { cache: 'no-store' });
+        if (res.ok) {
+          const d = await res.json();
+          latest = d;
+          oscHistory.push(d.osc_sample_us || 0);
+          if (oscHistory.length > 110) oscHistory.shift();
 
-        // If user hovers mouse over canvas, let them interactively test the QNX 18mm hard safety boundary!
-        if (manualCursor) {
-          data.raw_x = manualCursor.x + (Math.random() - 0.5) * 2.5;
-          data.raw_y = manualCursor.y + (Math.random() - 0.5) * 2.5;
-          data.ai_x = manualCursor.x;
-          data.ai_y = manualCursor.y;
-          const dx = manualCursor.x - 50.0;
-          const dy = manualCursor.y - 50.0;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 18.0 && dist > 0.001) {
-            data.x = 50.0 + dx * (18.0 / dist);
-            data.y = 50.0 + dy * (18.0 / dist);
-            data.artery_dist = 18.0;
-            data.state = 2;
-          } else {
-            data.x = manualCursor.x;
-            data.y = manualCursor.y;
-            data.artery_dist = dist;
-          }
+          sparkAiHist.push(Math.min(100, d.ai_latency_us));
+          if (sparkAiHist.length > 40) sparkAiHist.shift();
+          sparkSupHist.push(d.reaction_us);
+          if (sparkSupHist.length > 40) sparkSupHist.shift();
+
+          updateDOM(d);
+          drawSparkline('spark-ai', sparkAiHist, d.ai_latency_us > 850 ? '#f87171' : '#22d3ee', 5, 100);
+          drawSparkline('spark-sup', sparkSupHist, '#4ade80', 0.5, 3.0);
         }
-
-        if (baselineInterventions === null) {
-          baselineInterventions = data.interventions || 0;
-        }
-        const displayInterventions = Math.max(0, (data.interventions || 0) - baselineInterventions);
-
-        rawTrail.push({ x: data.raw_x ?? data.x, y: data.raw_y ?? data.y });
-        aiTrail.push({ x: data.ai_x ?? data.x, y: data.ai_y ?? data.y });
-        safeTrail.push({ x: data.x, y: data.y });
-        if (rawTrail.length > MAX_TRAIL) rawTrail.shift();
-        if (aiTrail.length > MAX_TRAIL) aiTrail.shift();
-        if (safeTrail.length > MAX_TRAIL) safeTrail.shift();
-
-        const qnxJitterNs = (data.jitter_ns && data.jitter_ns < 5000) ? data.jitter_ns : (1120 + (Date.now() % 480));
-        jitterHistory.push(qnxJitterNs / 1000.0);
-        aiLatencyHistory.push(data.latency_us || 48);
-        jitterHistory.shift();
-        aiLatencyHistory.shift();
-
-        document.getElementById('kpiQnxJitter').textContent = `${qnxJitterNs.toLocaleString()} ns`;
-        document.getElementById('kpiLinuxJitter').textContent = `${(data.linux_jitter_ns || 84200).toLocaleString()} ns`;
-        const ratio = ((data.linux_jitter_ns || 84200) / Math.max(1, qnxJitterNs)).toFixed(1);
-        document.getElementById('kpiJitterRatio').textContent = `${ratio}× higher jitter on Linux`;
-
-        document.getElementById('kpiAiLatency').textContent = `${(data.latency_us || 48).toLocaleString()} µs`;
-        document.getElementById('kpiAiLatency').className = data.bomb
-          ? 'mono text-[10px]l font-bold text-red-400 mt-0.5 animate-pulse'
-          : 'mono text-[10px]l font-bold text-cyan-400 mt-0.5';
-
-        document.getElementById('kpiInterventions').textContent = displayInterventions.toLocaleString();
-        document.getElementById('arteryDistVal').textContent = `${(data.artery_dist || 23.5).toFixed(2)} mm`;
-        document.getElementById('arteryDistVal').className = (data.state === 2 || data.bomb === 1)
-          ? 'text-sm font-bold text-red-400'
-          : 'text-sm font-bold text-emerald-400';
-
-        const banner = document.getElementById('stateBanner');
-        const stateText = document.getElementById('stateText');
-        const stateDot = document.getElementById('stateDot');
-        const canvasPanel = document.getElementById('canvasPanel');
-
-        if (data.state === 2 || data.bomb === 1) {
-          banner.className = 'px-3 py-1 rounded-lg border border-red-500 bg-red-500/20 flex items-center gap-2 glow-red';
-          stateDot.className = 'w-2 h-2 rounded-full bg-red-400 animate-ping';
-          stateText.className = 'mono text-[11px] font-bold tracking-wider text-red-200';
-          stateText.textContent = 'STATE 2: QNX PRIO-250f HARD RTOS PREEMPTION ACTIVE (ARTERY PROTECTED)';
-          canvasPanel.className = 'lg:col-span-5 panel rounded-xl p-3 flex flex-col justify-between min-h-0 glow-red';
-
-          document.getElementById('procStateAi').textContent = 'STARVED (>850µs MISS)';
-          document.getElementById('procStateAi').className = 'py-1.5 px-1.5 whitespace-nowrap text-red-400 font-bold';
-          document.getElementById('procAiMetric').textContent = `${data.latency_us} µs (DEADLINE VIOLATION)`;
-          document.getElementById('procStateBomb').textContent = 'RUNNING (CPU CONTENTION)';
-          document.getElementById('procStateBomb').className = 'py-1.5 px-1.5 whitespace-nowrap text-red-400 font-bold';
-          document.getElementById('procBombMetric').textContent = 'Starving Priority 15r';
-        } else {
-          banner.className = 'px-3 py-1 rounded-lg border border-emerald-500/50 bg-emerald-500/10 flex items-center gap-2';
-          stateDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-          stateText.className = 'mono text-[11px] font-bold tracking-wider text-emerald-300';
-          stateText.textContent = 'STATE 0: NOMINAL AI TREMOR FILTERING (QNX 8.0 MICROKERNEL)';
-          canvasPanel.className = 'lg:col-span-5 panel rounded-xl p-3 flex flex-col justify-between min-h-0';
-
-          document.getElementById('procStateAi').textContent = 'NANOSLEEP (60Hz)';
-          document.getElementById('procStateAi').className = 'py-1.5 px-1.5 whitespace-nowrap text-cyan-400';
-          document.getElementById('procAiMetric').textContent = `${data.latency_us} µs nominal`;
-          document.getElementById('procStateBomb').textContent = 'IDLE (BOMB=0)';
-          document.getElementById('procStateBomb').className = 'py-1.5 px-1.5 whitespace-nowrap text-slate-400';
-          document.getElementById('procBombMetric').textContent = 'Standby';
-        }
-
-        drawSurgicalField(data);
-        drawOscilloscope(data);
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (e) {}
     }
 
-    setInterval(pollTelemetry, 50);
-    pollTelemetry();
+    function renderLoop() {
+      drawWorkspace();
+      drawOscilloscope();
+      requestAnimationFrame(renderLoop);
+    }
+
+    setInterval(pollLoop, 45);
+    requestAnimationFrame(renderLoop);
   </script>
 </body>
 </html>
