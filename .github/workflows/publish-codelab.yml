@@ -1,0 +1,37 @@
+name: Build & Deploy Interactive QNX Codelab
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'CODELAB.md'
+      - '.github/workflows/publish-codelab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Google Codelabs claat binary
+        run: |
+          curl -fsSL https://github.com/googlecodelabs/tools/releases/latest/download/claat-linux-amd64 -o claat
+          chmod +x claat
+          mkdir -p _site
+          ./claat export -o _site CODELAB.md
+          echo '<meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html" />' > _site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
