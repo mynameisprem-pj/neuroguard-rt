@@ -27,16 +27,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install claat & export CODELAB.md
+        run: |
+          go install github.com/googlecodelabs/tools/claat@latest
+          mkdir -p _site
+          "$(go env GOPATH)/bin/claat" export -o _site CODELAB.md
+          touch _site/.nojekyll
+          cat << 'EOF' > _site/index.html
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html">
+            </head>
+            <body>
+              <a href="./qnx8-deterministic-ipc-safety-cage/index.html">Open QNX 8.0 Interactive Codelab</a>
+            </body>
+          </html>
+          EOF
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
-
-      - name: Export CODELAB.md with claat
-        run: |
-          curl -fsSL https://github.com/googlecodelabs/tools/releases/download/v2.2.5/claat-linux-amd64 -o claat
-          chmod +x claat
-          mkdir -p _site
-          ./claat export -o _site CODELAB.md
-          echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html"></head><body><a href="./qnx8-deterministic-ipc-safety-cage/index.html">Open QNX 8.0 Codelab</a></body></html>' > _site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
