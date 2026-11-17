@@ -1,15 +1,9 @@
-author: Prem Jha (mynameisprem-pj)
-
+authors: Prem Jha (mynameisprem-pj)
 summary: Build a deterministic QNX 8.0 watchdog supervisor from scratch—reproducing silent IPC priority lowering, catching deadlocked threads with 1kHz kernel pulses, and locking down untrusted processes with procmgr_ability.
-
 id: qnx8-deterministic-ipc-safety-cage
-
 categories: qnx, rtos, ipc, embedded, intermediate
-
 environments: Web
-
 status: Published
-
 feedback link: https://github.com/mynameisprem-pj/neuroguard-rt/issues
 
 # Defeating Priority Lowering & Starvation on QNX 8.0: Building a Sub-2µs Safety Cage
