@@ -13,20 +13,30 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Google Codelabs claat binary
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Export CODELAB.md with claat
         run: |
-          curl -fsSL https://github.com/googlecodelabs/tools/releases/latest/download/claat-linux-amd64 -o claat
+          curl -fsSL https://github.com/googlecodelabs/tools/releases/download/v2.2.5/claat-linux-amd64 -o claat
           chmod +x claat
           mkdir -p _site
           ./claat export -o _site CODELAB.md
-          echo '<meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html" />' > _site/index.html
+          echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html"></head><body><a href="./qnx8-deterministic-ipc-safety-cage/index.html">Open QNX 8.0 Codelab</a></body></html>' > _site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -34,4 +44,5 @@ jobs:
           path: _site
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
