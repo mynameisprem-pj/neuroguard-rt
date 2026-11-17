@@ -2,9 +2,11 @@
  * NeuroGuard-RT: POSIX Device Resource Manager (/dev/surgical_arm)
  * Priority: 60f (SCHED_FIFO) on QNX SDP 8.0
  *
- * Enforces single-writer actuator sovereignty: ONLY safety_supervisor (presenting
- * ACTUATOR_AUTH_MAGIC) can update physical scalpel state. Exposes JSON telemetry
- * via POSIX read() and fault-injection / reset latches via POSIX write().
+ * QNX-Specific Primitives Showcased:
+ *  - resmgr_attach() + iofunc_func_init(): Native /dev/surgical_arm character device
+ *  - ConnectClientInfo_r(): Unforgeable microkernel PID verification for single-writer
+ *    actuator sovereignty (blocks spoofed binary writes from untrusted processes with EPERM)
+ *  - procmgr_ability(): Drops spawn/fork abilities post-mount
  */
 
 #include <stdio.h>
@@ -19,15 +21,17 @@
 #include <sys/iofunc.h>
 #include <sys/dispatch.h>
 #include <sys/neutrino.h>
+#include <sys/procmgr.h>
 
 #include "neuroguard_ipc.h"
 
 static pthread_mutex_t     g_lock = PTHREAD_MUTEX_INITIALIZER;
 static ng_actuator_state_t g_act;
-static uint32_t            g_fault_mode = FAULT_NONE;
-static uint64_t            g_reset_seq  = 0;
-static time_t              g_boot_time  = 0;
-static int32_t             g_resmgr_pid = 0;
+static uint32_t            g_fault_mode         = FAULT_NONE;
+static uint64_t            g_reset_seq          = 0;
+static time_t              g_boot_time          = 0;
+static int32_t             g_resmgr_pid         = 0;
+static pid_t               g_authorized_sup_pid = 0; /* Locked on first verified supervisor handshake */
 
 static int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
     int status = iofunc_read_verify(ctp, msg, ocb, NULL);
@@ -37,7 +41,6 @@ static int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
         return ENOSYS;
     }
 
-    /* Format JSON on fresh offset 0 read */
     if (ocb->offset == 0) {
         char json[1024];
         pthread_mutex_lock(&g_lock);
@@ -86,7 +89,6 @@ static int io_read(resmgr_context_t *ctp, io_read_t *msg, RESMGR_OCB_T *ocb) {
         return _RESMGR_NOREPLY;
     }
 
-    /* EOF for subsequent reads until rewind/reopen */
     MsgReply(ctp->rcvid, 0, NULL, 0);
     return _RESMGR_NOREPLY;
 }
@@ -101,17 +103,34 @@ static int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
 
     size_t nbytes = msg->i.nbytes;
 
-    /* Path A: Authoritative Binary State Sync from Priority-250f Safety Supervisor */
+    /*
+     * Path A: Authoritative Binary Actuator Command
+     * Verified via QNX Microkernel ConnectClientInfo_r() unforgeable client PID!
+     */
     if (nbytes == sizeof(ng_actuator_state_t)) {
+        struct _client_info cinfo;
+        if (ConnectClientInfo_r(ctp->info.scoid, &cinfo, 0) != EOK) {
+            return EPERM;
+        }
+
         ng_actuator_state_t incoming;
         if (resmgr_msgread(ctp, &incoming, sizeof(incoming), sizeof(msg->i)) != sizeof(incoming)) {
             return EFAULT;
         }
         if (incoming.auth_magic != ACTUATOR_AUTH_MAGIC) {
-            /* Reject unauthorized attempt to command surgical actuator */
             return EPERM;
         }
+
         pthread_mutex_lock(&g_lock);
+        if (g_authorized_sup_pid == 0) {
+            /* Bind actuator write sovereignty to the first verified supervisor PID */
+            g_authorized_sup_pid = cinfo.pid;
+        } else if (cinfo.pid != g_authorized_sup_pid) {
+            /* Reject spoofed binary writes from any other process (e.g., hijacked AI) */
+            pthread_mutex_unlock(&g_lock);
+            return EPERM;
+        }
+
         g_act = incoming;
         pthread_mutex_unlock(&g_lock);
 
@@ -119,7 +138,7 @@ static int io_write(resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb) {
         return EOK;
     }
 
-    /* Path B: Operator Fault Injection / Reset Control Latch */
+    /* Path B: Operator Fault Injection / Reset Control Latch (Cannot move actuator) */
     char cmd[128];
     size_t copy_len = (nbytes < sizeof(cmd) - 1) ? nbytes : (sizeof(cmd) - 1);
     if (resmgr_msgread(ctp, cmd, copy_len, sizeof(msg->i)) < 0) {
@@ -194,7 +213,16 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    printf("[surgical_arm_resmgr] Mounted %s at Priority 60f (PID %d)\n", ACTUATOR_DEV_PATH, g_resmgr_pid);
+    /* Drop spawn/fork abilities after mounting /dev/surgical_arm */
+    procmgr_ability(0,
+        PROCMGR_ADN_ROOT | PROCMGR_ADN_NONROOT | PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK |
+        PROCMGR_AID_SPAWN,
+        PROCMGR_ADN_ROOT | PROCMGR_ADN_NONROOT | PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK |
+        PROCMGR_AID_FORK,
+        PROCMGR_AID_EOL);
+
+    printf("[surgical_arm_resmgr] Mounted %s at Priority 60f (PID %d) with ConnectClientInfo_r Guard\n",
+           ACTUATOR_DEV_PATH, g_resmgr_pid);
 
     dispatch_context_t *ctp = dispatch_context_alloc(dpp);
     while (1) {
