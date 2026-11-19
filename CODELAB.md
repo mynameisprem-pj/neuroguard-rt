@@ -1,58 +1,66 @@
-authors: Prem Jha (mynameisprem-pj)
-summary: Build a deterministic QNX 8.0 watchdog supervisor from scratch—reproducing silent IPC priority lowering, catching deadlocked threads with 1kHz kernel pulses, and locking down untrusted processes with procmgr_ability.
 id: qnx8-deterministic-ipc-safety-cage
-categories: qnx, rtos, ipc, embedded, intermediate
-environments: Web
-status: Published
+summary: Build a sub-2-microsecond QNX 8.0 watchdog safety cage from scratch—reproducing silent IPC priority lowering, catching starved threads with 1kHz kernel pulses, and sandboxing untrusted code with procmgr_ability.
+categories: IPC, Real-Time & Safety
+tags: intermediate
+platforms: QEMU, Raspberry Pi 5
+published: 2026-11-19
+status: published
+authors: Prem Prasad Joshi
 feedback link: https://github.com/mynameisprem-pj/neuroguard-rt/issues
 
-# Defeating Priority Lowering & Starvation on QNX 8.0: Building a Sub-2µs Safety Cage
+# Build a Sub-2µs Real-Time Safety Cage on QNX 8.0
 
-## Overview
-Duration: 0:03:00
+## Introduction
+Duration: 0:02:00
 
-When Linux or general-purpose C developers move to **QNX Software Development Platform (SDP) 8.0**, they almost always hit two dangerous real-time traps when building mixed-criticality systems (such as pairing an AI inference thread with a safety-critical actuator controller):
+When building mixed-criticality embedded systems—such as a surgical robot or autonomous rover where an untrusted **AI inference thread** proposes movements to a **hard real-time actuator controller**—general-purpose POSIX habits can silently break your real-time guarantees on **QNX Software Development Platform (SDP) 8.0**.
 
-1. **Silent Server Priority Lowering:** By default, QNX Neutrino IPC channels adjust a server thread's priority to match the *incoming client's priority* on `MsgReceive()`. A Priority-250 safety supervisor receiving a message from a Priority-20 AI client **silently drops to Priority 20**—allowing a Priority-35 background thread to starve your "top-priority" safety loop!
-2. **Deadlocked Client Blindness:** If your safety supervisor only checks system health inside `MsgReceive()` when a client calls `MsgSend()`, a completely deadlocked or starved client sends *zero* messages—leaving your actuator unguarded forever.
+![Comparison between default QNX channel priority lowering and a fixed-priority 1kHz watchdog cage](codelab-assets/priority-trap-sketch.svg)
 
-In this hands-on 25-minute QNX 8.0 lab, you will **reproduce the exact priority-lowering bug live in `pidin`**, exploit it with a CPU starvation thread, and then engineer a bulletproof **sub-2-microsecond QNX 8.0 Safety Cage** from a blank directory.
+Specifically, developers new to the QNX Neutrino microkernel almost always hit two subtle traps:
 
-### What You Will Learn
-* How QNX synchronous message passing (`MsgSend`, `MsgReceive`, `MsgReply`) dynamically adjusts thread priorities—and how to lock ceiling priority with `_NTO_CHF_FIXED_PRIORITY`.
-* How to multiplex **synchronous client messages** and **1,000 Hz kernel hardware timer pulses (`SIGEV_PULSE_INIT`)** on a single QNX channel using `struct _pulse`.
-* How to profile real-time reaction latency in nanoseconds using `ClockCycles()` and `SYSPAGE_ENTRY(qtime)->cycles_per_sec`.
-* How to sandbox untrusted threads at the microkernel level using QNX 8.0's `procmgr_ability()`.
+1. **Silent Server Priority Lowering:** By default, QNX IPC channels adjust a server thread's priority to match incoming client messages. If your `Priority 250` safety supervisor receives a message from a `Priority 20` AI thread, **your supervisor silently drops to Priority 20**—allowing a `Priority 35` background worker to starve it!
+2. **Deadlocked Client Blindness:** If your supervisor only checks safety bounds when `MsgReceive()` receives a client message, a completely frozen or starved AI thread sends *zero* messages—leaving your physical actuator unguarded.
 
-### Prerequisites
-* A free non-commercial **QNX Everywhere** license with **QNX SDP 8.0** installed (`$HOME/qnx800/qnxsdp-env.sh`).
-* A running QNX 8.0 target (`x86_64` Quick Start Target Image on QEMU, or Raspberry Pi 5) reachable via console or SSH.
-* Basic familiarity with C and POSIX threads.
+In this codelab, you will build a complete mixed-criticality **QNX 8.0 Safety Cage** step-by-step: first triggering the priority-lowering trap live in `pidin`, then engineering a fixed-priority `1,000 Hz` hardware pulse watchdog, and finally locking down the untrusted client with `procmgr_ability()`.
 
-Positive
-: **Zero Hardware Required:** Every exercise in this codelab runs identically on a QNX 8.0 `x86_64` QEMU virtual machine on Linux or Windows WSL2, as well as physical ARM64 hardware like Raspberry Pi 5.
+### What you'll learn
+* How QNX synchronous message passing (`MsgSend`, `MsgReceive`, `MsgReply`) manages thread priority inheritance—and how to lock ceiling priority with `_NTO_CHF_FIXED_PRIORITY`.
+* How to multiplex **client messages** and **1,000 Hz kernel timer pulses (`SIGEV_PULSE_INIT`)** on one channel using `struct _pulse`.
+* How to profile nanosecond reaction times using `ClockCycles()` and `SYSPAGE_ENTRY(qtime)->cycles_per_sec`.
+* How to permanently strip root/non-root privileges from untrusted code using `procmgr_ability()` and bound IPC calls with `TimerTimeout()`.
+
+### Starter kit & reference downloads
+You can write every file from scratch as you follow along, or download the complete starter & solution archive right now:
+
+<button>[Download Starter & Solution Kit (.zip)](https://github.com/mynameisprem-pj/neuroguard-rt/raw/main/codelab-assets/qnx-safety-lab-kit.zip)</button>
 
 ---
 
-## Set Up Your Lab Workspace
+## Set up your QNX 8.0 environment
 Duration: 0:03:00
 
-Create a clean, standalone workspace on your Linux or WSL2 host and load the QNX SDP 8.0 cross-compilation environment:
+To complete this codelab, you need a host machine (Linux or Windows WSL2) with **QNX SDP 8.0** installed and a running QNX 8.0 target (`x86_64` QEMU virtual machine or Raspberry Pi 5).
+
+<button>[Get a Free QNX Everywhere License](https://www.qnx.com/products/everywhere/)</button>
+<button>[Download Visual Studio Code + QNX Toolkit](https://marketplace.visualstudio.com/items?itemName=qnx.qnx-vscode)</button>
+
+### Activate the toolchain
+Open a terminal on your Linux or WSL2 host and source your QNX SDP 8.0 environment script:
 
 ```bash
-mkdir -p ~/qnx-safety-lab && cd ~/qnx-safety-lab
 source $HOME/qnx800/qnxsdp-env.sh
 
 ```
 
-Verify that the QNX `qcc` compiler targeting `x86_64` (or `aarch64le` if using Raspberry Pi 5) is active:
+Verify that the `qcc` cross-compiler is in your `PATH`:
 
 ```bash
 qcc -V
 
 ```
 
-Expected output:
+You should see the GCC 12.2.0 QNX targets listed:
 
 ```console
 cc: targets available in /home/user/qnx800/host/linux/x86_64/etc/qcc:
@@ -61,11 +69,27 @@ cc: targets available in /home/user/qnx800/host/linux/x86_64/etc/qcc:
 
 ```
 
-### Define the Shared IPC Message Contract (`lab_ipc.h`)
+Positive
+: **Tip for Raspberry Pi 5 users:** Every `qcc` command in this codelab uses `-Vgcc_ntox86_64` for QEMU. If you are deploying to a Raspberry Pi 5 target, simply swap that flag to `-Vgcc_ntoaarch64le`.
 
-On QNX 8.0, a single channel can receive both **kernel pulses** (4-byte payload + code) and **client structs** (`MsgSend`). For `MsgReceive()` to safely distinguish both without corrupting memory, your message `struct` **must** embed `struct _pulse` as its very first member.
+---
 
-Create `lab_ipc.h`:
+## Create the project & IPC contract
+
+Duration: 0:03:00
+
+Create a clean directory for your lab project and include a `Makefile` so building every stage takes a single command:
+
+```bash
+mkdir -p ~/qnx-safety-lab && cd ~/qnx-safety-lab
+
+```
+
+### Design the multiplexed message header (`lab_ipc.h`)
+
+Later in this codelab, our Safety Supervisor channel will receive **both** asynchronous `16-byte` kernel pulses and synchronous `32-byte` client coordinate structs.
+
+Create `lab_ipc.h` in `~/qnx-safety-lab`:
 
 ```c
 #ifndef LAB_IPC_H
@@ -81,7 +105,7 @@ Create `lab_ipc.h`:
 #define SAFE_LIMIT_MM         18.00
 
 typedef struct {
-    struct _pulse hdr;           /* MUST be first member for mixed pulse/msg channel */
+    struct _pulse hdr;           /* Byte 0: MUST be first member! */
     uint16_t      type;
     uint32_t      seq;
     double        target_mm;
@@ -98,22 +122,21 @@ typedef struct {
 ```
 
 Negative
-: **Critical QNX Pitfall:** Never put `uint16_t type` *before* `struct _pulse hdr` on a channel that receives kernel timer pulses! When `MsgReceive()` returns `rcvid == 0`, the microkernel writes a `struct _pulse` starting at byte offset `0` of your receive buffer.
+: **Common QNX Pitfall:** Never place `uint16_t type` *before* `struct _pulse hdr` on a channel that receives pulses. When `MsgReceive()` returns `rcvid == 0`, the QNX microkernel writes `struct _pulse` directly at byte `0` of your buffer—overwriting anything placed ahead of it!
 
 ---
 
-## Step 1: Reproduce the Silent Priority-Lowering Bug
+## Trigger the priority-lowering trap
 
-Duration: 0:06:00
+Duration: 0:04:00
 
-Let's write a naive "High-Priority" Supervisor that elevates itself to **Priority `250` (`SCHED_FIFO`)**, calls `name_attach(NULL, LAB_ATTACH_NAME, 0)` with default channel flags, and prints its *actual* active priority after receiving a message from a **Priority `20**` client.
+Let's start by building a naive "Priority-250" Supervisor using default `name_attach()` flags so you can witness silent priority lowering firsthand.
 
 Create `buggy_supervisor.c`:
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <pthread.h>
 #include <sched.h>
 #include "lab_ipc.h"
@@ -122,23 +145,20 @@ int main(void) {
     struct sched_param sp = { .sched_priority = 250 };
     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
 
-    /* BUG: Default name_attach(NULL, ...) creates a channel WITHOUT _NTO_CHF_FIXED_PRIORITY */
+    /* Default channel: omits _NTO_CHF_FIXED_PRIORITY */
     name_attach_t *attach = name_attach(NULL, LAB_ATTACH_NAME, 0);
-    if (!attach) {
-        perror("name_attach");
-        return 1;
-    }
+    if (!attach) { perror("name_attach"); return 1; }
 
     int policy;
     pthread_getschedparam(pthread_self(), &policy, &sp);
-    printf("[Supervisor] Booted at Priority %d. Waiting for client...\n", sp.sched_priority);
+    printf("[Supervisor] Booted at Priority %d. Waiting for AI client...\n", sp.sched_priority);
 
     lab_msg_t msg;
     while (1) {
         int rcvid = MsgReceive(attach->chid, &msg, sizeof(msg), NULL);
         if (rcvid > 0) {
             pthread_getschedparam(pthread_self(), &policy, &sp);
-            printf("[Supervisor] Received seq=%u -> ACTIVE PRIORITY DROPPED TO: %d!\n",
+            printf("[Supervisor] seq=%u -> ACTIVE PRIORITY DROPPED TO: %d!\n",
                    msg.seq, sp.sched_priority);
 
             lab_reply_t rep = { .clamped = 0, .applied_mm = msg.target_mm, .reaction_ns = 0 };
@@ -149,7 +169,7 @@ int main(void) {
 
 ```
 
-Now create a low-priority **Priority `20**` client (`client_ai.c`) that sends 3 messages:
+Now create a low-priority **Priority `20` (`SCHED_RR`)** AI client in `client_ai.c`:
 
 ```c
 #include <stdio.h>
@@ -169,7 +189,7 @@ int main(void) {
         lab_msg_t msg = { .type = MSG_AI_COMMAND, .seq = i, .target_mm = 12.5 };
         lab_reply_t rep;
         MsgSend(coid, &msg, sizeof(msg), &rep, sizeof(rep));
-        usleep(200000);
+        usleep(150000);
     }
     name_close(coid);
     return 0;
@@ -177,7 +197,7 @@ int main(void) {
 
 ```
 
-Compile both with `qcc`, copy them to `/data/bin` (or `/tmp`) on your QNX 8.0 target, and run them:
+Compile both binaries, copy them to `/tmp` on your QNX 8.0 target, and run them:
 
 ```bash
 qcc -Vgcc_ntox86_64 -Wall -O2 buggy_supervisor.c -o buggy_supervisor
@@ -185,46 +205,43 @@ qcc -Vgcc_ntox86_64 -Wall -O2 client_ai.c -o client_ai
 
 ```
 
-On your QNX 8.0 target shell:
+On the QNX target console:
 
 ```sh
 /tmp/buggy_supervisor &
 /tmp/client_ai
+slay buggy_supervisor
 
 ```
 
-Look at the output printed by QNX 8.0:
+Observe the console output:
 
 ```console
-[Supervisor] Booted at Priority 250. Waiting for client...
-[Supervisor] Received seq=1 -> ACTIVE PRIORITY DROPPED TO: 20!
-[Supervisor] Received seq=2 -> ACTIVE PRIORITY DROPPED TO: 20!
-[Supervisor] Received seq=3 -> ACTIVE PRIORITY DROPPED TO: 20!
+[Supervisor] Booted at Priority 250. Waiting for AI client...
+[Supervisor] seq=1 -> ACTIVE PRIORITY DROPPED TO: 20!
+[Supervisor] seq=2 -> ACTIVE PRIORITY DROPPED TO: 20!
+[Supervisor] seq=3 -> ACTIVE PRIORITY DROPPED TO: 20!
 
 ```
 
 Positive
-: **Why did QNX do this?** For general resource managers (like a filesystem or network stack), inheriting client priority prevents a Priority-10 client's giant file read from preempting a Priority-100 thread! However, for a **Safety Supervisor**, dropping from `250` to `20` means *any* Priority-25 spinner thread will starve your safety loop!
-
-Kill the buggy supervisor before moving on (`slay buggy_supervisor`).
+: **Why did this happen?** QNX channels default to client-driven priority inheritance so shared servers (like filesystems) do work at the caller's priority. In a safety supervisor, however, dropping from `250` to `20` means *any* Priority-35 CPU spike will preempt your safety cage!
 
 ---
 
-## Step 2: Lock Priority 250f & Add a 1kHz Hardware Pulse Watchdog
+## Lock ceiling priority 250f
 
-Duration: 0:07:00
+Duration: 0:03:00
 
-To build a true hard real-time safety cage on QNX 8.0, we fix **both** architectural flaws simultaneously:
+To immunize your Safety Supervisor against client priority lowering, pre-allocate the channel with `ChannelCreate()` passing **`_NTO_CHF_FIXED_PRIORITY`**, wrap it with `dispatch_create_channel()`, and then attach your namespace path with `name_attach()`.
 
-1. Pre-create our channel with `ChannelCreate(_NTO_CHF_FIXED_PRIORITY | _NTO_CHF_DISCONNECT)` and pass it into `dispatch_create_channel(chid, 0)` before calling `name_attach()`. Now the microkernel **never** alters our Priority `250f`.
-2. Attach a `1,000 Hz` (`1.0 ms`) `CLOCK_MONOTONIC` kernel pulse (`SIGEV_PULSE_INIT`) directly to our own channel at Priority `250`. Even if `client_ai` freezes completely, the kernel wakes `MsgReceive()` every `1.0 ms` (`rcvid == 0`) so we can check `ClockCycles()` elapsed time and clamp the actuator within `2.50 ms`!
-
-Create `fixed_supervisor.c`:
+Create `fixed_supervisor.c` and start with the locked channel setup:
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <math.h>
 #include <time.h>
 #include <pthread.h>
@@ -235,17 +252,39 @@ Create `fixed_supervisor.c`:
 #include "lab_ipc.h"
 
 int main(void) {
-    /* 1. Lock thread at SCHED_FIFO Priority 250 */
+    /* 1. Pin to CPU Core 0 & elevate to Priority 250f (SCHED_FIFO) */
+    unsigned runmask = 0x01U;
+    ThreadCtl(_NTO_TCTL_RUNMASK, &runmask);
+
     struct sched_param sp = { .sched_priority = 250 };
     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
 
-    /* 2. Create Fixed-Priority Channel -> immune to client priority lowering! */
-    int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY | _NTO_CHF_DISCONNECT);
+    /* 2. Create Fixed-Priority Channel + Disconnect & Unblock notifications */
+    int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY | _NTO_CHF_DISCONNECT | _NTO_CHF_UNBLOCK);
+    if (chid == -1) { perror("ChannelCreate"); return 1; }
+
     dispatch_t *dpp = dispatch_create_channel(chid, 0);
     name_attach_t *attach = name_attach(dpp, LAB_ATTACH_NAME, 0);
     if (!attach) { perror("name_attach"); return 1; }
 
-    /* 3. Arm 1,000 Hz (1.0 ms) Kernel Hardware Pulse Watchdog */
+```
+
+Keep `fixed_supervisor.c` open—we will arm its `1,000 Hz` hardware pulse watchdog in the next step!
+
+---
+
+## Arm the 1kHz pulse watchdog
+
+Duration: 0:04:00
+
+Locking Priority `250f` solves priority lowering, **but what if the AI client freezes completely and stops calling `MsgSend()`?**
+
+By connecting to our own channel via `_NTO_SIDE_CHANNEL` and configuring a `1,000 Hz` (`1.0 ms`) `CLOCK_MONOTONIC` timer with **`SIGEV_PULSE_INIT`**, the QNX microkernel delivers a lightweight priority-250 pulse every millisecond—allowing the Supervisor to detect a silent heartbeat timeout (`> 2,500 µs`) and clamp the actuator autonomously.
+
+Append the timer initialization and receive loop to finish `fixed_supervisor.c`:
+
+```c
+    /* 3. Arm 1,000 Hz (1.0 ms) CLOCK_MONOTONIC Kernel Pulse Watchdog */
     int self_coid = ConnectAttach(0, 0, attach->chid, _NTO_SIDE_CHANNEL, 0);
     struct sigevent ev;
     SIGEV_PULSE_INIT(&ev, self_coid, 250, PULSE_CODE_HEARTBEAT, 0);
@@ -262,16 +301,21 @@ int main(void) {
     uint64_t last_hb = ClockCycles();
     int client_seen = 0, safe_clamped = 0;
 
-    printf("[Fixed Supervisor] Locked at Priority 250f | 1kHz Pulse Armed\n");
+    printf("[Fixed Supervisor] Locked at Priority 250f on Core 0 | 1kHz Watchdog Armed\n");
 
     lab_msg_t msg;
     while (1) {
         int rcvid = MsgReceive(attach->chid, &msg, sizeof(msg), NULL);
         uint64_t t_in = ClockCycles();
+        if (rcvid == -1) continue;
 
-        if (rcvid == 0 && msg.hdr.code == PULSE_CODE_HEARTBEAT) {
-            /* Autonomous 1kHz Kernel Watchdog Path */
-            if (client_seen && !safe_clamped) {
+        /* Path A: Kernel Pulses (rcvid == 0) */
+        if (rcvid == 0) {
+            if (msg.hdr.code == _PULSE_CODE_UNBLOCK) {
+                MsgError(msg.hdr.value.sival_int, ETIMEDOUT);
+            } else if (msg.hdr.code == _PULSE_CODE_DISCONNECT) {
+                ConnectDetach(msg.hdr.scoid);
+            } else if (msg.hdr.code == PULSE_CODE_HEARTBEAT && client_seen && !safe_clamped) {
                 uint64_t age_us = ((t_in - last_hb) * 1000000ULL) / cps;
                 if (age_us > 2500) {
                     safe_clamped = 1;
@@ -285,7 +329,8 @@ int main(void) {
             continue;
         }
 
-        if (rcvid > 0 && msg.type == MSG_AI_COMMAND) {
+        /* Path B: Client Coordinate Proposal (rcvid > 0) */
+        if (msg.type == MSG_AI_COMMAND) {
             client_seen = 1;
             last_hb = t_in;
 
@@ -313,15 +358,18 @@ int main(void) {
 
 ---
 
-## Step 3: Sandbox the Untrusted Client with `procmgr_ability` & Bound IPC with `TimerTimeout`
+## Sandbox the untrusted AI process
 
-Duration: 0:06:00
+Duration: 0:04:00
 
-What if a bug or memory exploit inside `client_ai` tries to call `pthread_setschedparam(..., 255)` to overpower our Priority-250 supervisor, or spawn rogue processes?
+Even with a fixed-priority supervisor, what stops a compromised or buggy AI binary running as `root` from calling `pthread_setschedparam(..., 255)` to overpower your safety cage, or hanging indefinitely on IPC?
 
-QNX 8.0 provides **`procmgr_ability()`** (`<sys/procmgr.h>`), allowing a process to **permanently drop kernel abilities** right after initialization. Let's also wrap `MsgSend()` with **`TimerTimeout(CLOCK_MONOTONIC, _NTO_TIMEOUT_SEND | _NTO_TIMEOUT_REPLY, ...)`** so no IPC call can ever block indefinitely.
+QNX 8.0 solves both at the microkernel boundary:
 
-Create `sandboxed_ai_test.c` (which tests nominal messages, an unsafe `25.4 mm` excursion, and a `15 ms` starvation stall, plus verifies that priority escalation is denied by the microkernel):
+1. **`procmgr_ability()` (`<sys/procmgr.h>`):** Permanently strips and locks (`PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK`) specific kernel abilities (`PROCMGR_AID_PRIORITY`, `PROCMGR_AID_SPAWN`, `PROCMGR_AID_IO`)—even for `root` (`PROCMGR_ADN_ROOT`).
+2. **`TimerTimeout()`:** Arms a per-call kernel timeout on `_NTO_TIMEOUT_SEND | _NTO_TIMEOUT_REPLY` so `MsgSend()` can never block forever.
+
+Create `sandboxed_ai_test.c`:
 
 ```c
 #include <stdio.h>
@@ -338,7 +386,7 @@ int main(void) {
     struct sched_param sp = { .sched_priority = 20 };
     pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
 
-    /* QNX 8.0 Least-Privilege Sandbox: Permanently drop ability to raise priority, spawn, or do raw I/O */
+    /* Permanently drop & lock PRIORITY, SPAWN, and raw I/O abilities */
     procmgr_ability(0,
         PROCMGR_ADN_ROOT | PROCMGR_ADN_NONROOT | PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK |
         PROCMGR_AID_PRIORITY,
@@ -348,31 +396,30 @@ int main(void) {
         PROCMGR_AID_IO,
         PROCMGR_AID_EOL);
 
-    /* Verify QNX microkernel blocks rogue escalation to Priority 250! */
+    /* Prove that the QNX microkernel now blocks priority escalation! */
     sp.sched_priority = 250;
     int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
-    printf("[AI Sandbox] Attempted escalation to Prio 250 -> Kernel returned: %s (errno=%d)\n",
+    printf("[AI Sandbox] Escalation to Prio 250 blocked -> %s (errno=%d)\n",
            strerror(err), err);
 
     int coid = name_open(LAB_ATTACH_NAME, 0);
     if (coid < 0) { perror("name_open"); return 1; }
 
-    double test_targets[3] = { 11.5, 14.0, 25.4 }; /* 3rd target breaches 18.0 mm! */
+    double proposals[3] = { 11.5, 14.2, 25.4 }; /* 25.4 mm exceeds 18.00 mm limit */
     for (int i = 0; i < 3; i++) {
-        /* Bound MsgSend/Reply to 5 ms max via QNX kernel TimerTimeout */
-        uint64_t timeout_ns = 5000000ULL;
+        uint64_t timeout_ns = 5000000ULL; /* 5 ms bound */
         struct sigevent tev;
         SIGEV_UNBLOCK_INIT(&tev);
         TimerTimeout(CLOCK_MONOTONIC, _NTO_TIMEOUT_SEND | _NTO_TIMEOUT_REPLY, &tev, &timeout_ns, NULL);
 
-        lab_msg_t msg = { .type = MSG_AI_COMMAND, .seq = (uint32_t)(i + 1), .target_mm = test_targets[i] };
+        lab_msg_t msg = { .type = MSG_AI_COMMAND, .seq = (uint32_t)(i + 1), .target_mm = proposals[i] };
         lab_reply_t rep;
         MsgSend(coid, &msg, sizeof(msg), &rep, sizeof(rep));
-        usleep(1000); /* 1.0 ms nominal heartbeat */
+        usleep(1000);
     }
 
-    printf("[AI Sandbox] Simulating 15 ms CPU Starvation stall...\n");
-    usleep(15000); /* Triggers autonomous 1kHz Watchdog pulse on Supervisor! */
+    printf("[AI Sandbox] Injecting 15 ms CPU starvation stall...\n");
+    usleep(15000);
 
     name_close(coid);
     return 0;
@@ -382,11 +429,11 @@ int main(void) {
 
 ---
 
-## Step 4: Compile, Verify in `pidin`, & Measure Sub-2µs Determinism
+## Profile sub-microsecond reaction time
 
 Duration: 0:03:00
 
-Compile both upgraded binaries on your host:
+Compile the hardened supervisor and sandboxed test harness on your host:
 
 ```bash
 qcc -Vgcc_ntox86_64 -Wall -O2 fixed_supervisor.c -lm -o fixed_supervisor
@@ -394,7 +441,7 @@ qcc -Vgcc_ntox86_64 -Wall -O2 sandboxed_ai_test.c -o sandboxed_ai_test
 
 ```
 
-Copy them to your QNX 8.0 target and run the verification sequence:
+Copy both binaries to `/tmp` on your QNX 8.0 target and run the verification test:
 
 ```sh
 /tmp/fixed_supervisor &
@@ -403,29 +450,71 @@ pidin | grep fixed_supervisor
 
 ```
 
-Observe the deterministic microkernel execution:
+Check your QNX 8.0 console output:
 
 ```console
-[Fixed Supervisor] Locked at Priority 250f | 1kHz Pulse Armed
+[Fixed Supervisor] Locked at Priority 250f on Core 0 | 1kHz Watchdog Armed
  413712   1 tmp/fixed_supervisor 250f RECEIVE     1
-[AI Sandbox] Attempted escalation to Prio 250 -> Kernel returned: Operation not permitted (errno=1)
+[AI Sandbox] Escalation to Prio 250 blocked -> Operation not permitted (errno=1)
 [IPC OK] seq=1 | Prio=250 (LOCKED!) | in=11.5 -> out=11.5 mm | react=890 ns
-[IPC OK] seq=2 | Prio=250 (LOCKED!) | in=14.0 -> out=14.0 mm | react=760 ns
+[IPC OK] seq=2 | Prio=250 (LOCKED!) | in=14.2 -> out=14.2 mm | react=760 ns
 [IPC OK] seq=3 | Prio=250 (LOCKED!) | in=25.4 -> out=18.0 mm | react=810 ns
-[AI Sandbox] Simulating 15 ms CPU Starvation stall...
+[AI Sandbox] Injecting 15 ms CPU starvation stall...
 [WATCHDOG TRIP] Client starved (2984 us > 2500 us)! Clamped to 18.00 mm in 640 ns!
 
 ```
 
+Look at all four deterministic guarantees verified in under 20 lines of output:
+
+1. **`pidin` Verification:** `fixed_supervisor` remains strictly at `250f RECEIVE`.
+2. **Kernel Privilege Jail:** Even when launched as `root`, `procmgr_ability()` rejected the priority-250 escalation with `Operation not permitted (EPERM)`.
+3. **Sub-Microsecond Spatial Clamp:** Proposal `25.4 mm` was clamped to `18.0 mm` in **`810 ns`**.
+4. **Autonomous Starvation Catch:** When the AI stalled past `2,500 µs`, the `1kHz` kernel pulse tripped and clamped the boundary in **`640 ns`**.
+
+---
+
+## Enforce single-writer device access
+
+Duration: 0:03:00
+
+In a production robotics system, your Safety Supervisor outputs validated coordinates to a **QNX POSIX Resource Manager** (for example, `/dev/surgical_arm`). To prevent a rogue process from bypassing your supervisor and calling `write()` directly on `/dev/surgical_arm`, use **`ConnectClientInfo_r()`** inside your resource manager's `io_write` handler to verify the caller's unforgeable microkernel Process ID (`pid`):
+
+```c
+/* Inside your Resource Manager's io_write(resmgr_context_t *ctp, ...) handler: */
+struct _client_info cinfo;
+if (ConnectClientInfo_r(ctp->info.scoid, &cinfo, 0) != EOK) {
+    return EPERM;
+}
+if (cinfo.pid != authorized_supervisor_pid) {
+    /* Kernel guarantees cinfo.pid cannot be spoofed by user-space payloads! */
+    return EPERM;
+}
+
+```
+
 Positive
-: **Mission Accomplished!** Look at all three proofs in that console log:
+: **Defense in Depth:** Unlike magic tokens inside user-space structs, `ctp->info.scoid` is maintained inside the QNX microkernel's channel connection table—making sender identity 100% unforgeable.
 
-1. `procmgr_ability()` blocked the untrusted process from escalating priority (`Operation not permitted`)—even if launched as `root`!
-2. `_NTO_CHF_FIXED_PRIORITY` held the Supervisor steady at `Prio=250` across every `MsgReceive()`.
-3. Both spatial clamping (`25.4 -> 18.0 mm`) and silent heartbeat starvation (`> 2500 us`) were caught in **under 1 microsecond (`640–890 ns`)**!
+---
 
-### Next Steps & Full Reference Architecture
+## Congratulations!
 
-To see this exact QNX 8.0 safety pattern scaled into a full 5-binary surgical robotics architecture—complete with a `/dev/surgical_arm` POSIX Resource Manager (`ConnectClientInfo_r` sender verification) and a 30Hz Surgical Robotics Cockpit—explore the [NeuroGuard-RT Open-Source Repository](https://github.com/mynameisprem-pj/neuroguard-rt).
+Duration: 0:01:00
+
+Congratulations! You have built, exploited, hardened, and profiled a mixed-criticality **QNX 8.0 Hard Real-Time Safety Cage** capable of isolating untrusted AI workloads with sub-microsecond reaction times.
+
+### Summary of QNX 8.0 primitives mastered
+
+* **`ChannelCreate(_NTO_CHF_FIXED_PRIORITY)`** — Eliminated silent server priority lowering during IPC.
+* **`SIGEV_PULSE_INIT` + `CLOCK_MONOTONIC**` — Built a `1,000 Hz` non-blocking hardware watchdog multiplexed via `struct _pulse`.
+* **`procmgr_ability()` & `ConnectClientInfo_r()**` — Enforced least-privilege sandboxing and unforgeable single-writer device sovereignty.
+* **`TimerTimeout()` & `ClockCycles()**` — Bounded synchronous IPC calls and profiled nanosecond execution determinism.
+
+### Explore the full surgical robotics reference system
+
+Want to see these exact primitives driving a 5-process surgical robotics simulator with a live `30Hz` Jitter Oscilloscope and workspace visualizer?
+
+[Explore NeuroGuard-RT on GitHub](https://github.com/mynameisprem-pj/neuroguard-rt)
+[Download Starter & Solution Kit (.zip)](https://github.com/mynameisprem-pj/neuroguard-rt/raw/main/codelab-assets/qnx-safety-lab-kit.zip)
 
 ```

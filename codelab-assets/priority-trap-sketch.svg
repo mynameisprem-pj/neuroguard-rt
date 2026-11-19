@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 320" font-family="Inter, Segoe UI, system-ui, sans-serif">
+  <rect width="860" height="320" rx="14" fill="#0b1220" />
+  
+  <!-- Left Card: The Default Trap -->
+  <rect x="20" y="20" width="400" height="280" rx="10" fill="#131c2e" stroke="#ef4444" stroke-width="2" />
+  <text x="40" y="52" fill="#f87171" font-size="15" font-weight="700">❌ DEFAULT CHANNEL: SILENT PRIORITY DROP</text>
+  <text x="40" y="72" fill="#94a3b8" font-size="12">ChannelCreate(0) inherits incoming client priority</text>
+
+  <rect x="42" y="100" width="135" height="64" rx="8" fill="#1e293b" stroke="#fbbf24" stroke-width="1.5" />
+  <text x="56" y="127" fill="#fde68a" font-size="13" font-weight="700">AI Client Thread</text>
+  <text x="56" y="147" fill="#cbd5e1" font-size="12">Priority: 20r (RR)</text>
+
+  <path d="M182 132 L248 132" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrowRed)" />
+  <text x="187" y="122" fill="#fbbf24" font-size="11">MsgSend()</text>
+
+  <rect x="255" y="100" width="145" height="64" rx="8" fill="#3b1219" stroke="#ef4444" stroke-width="1.8" />
+  <text x="268" y="126" fill="#fecaca" font-size="13" font-weight="700">Safety Supervisor</text>
+  <text x="268" y="147" fill="#f87171" font-size="12" font-weight="700">250f ➔ DROPS TO 20!</text>
+
+  <rect x="95" y="205" width="250" height="68" rx="8" fill="#450a0a" stroke="#f87171" stroke-dasharray="5,4" stroke-width="1.5" />
+  <text x="115" y="232" fill="#fca5a5" font-size="13" font-weight="700">⚡ Rogue CPU Hog (Priority 35r)</text>
+  <text x="115" y="253" fill="#fecaca" font-size="11.5">Preempts Supervisor (35 > 20) ➔ DEADLINE MISSED</text>
+
+  <!-- Right Card: The QNX Fixed-Priority Cage -->
+  <rect x="440" y="20" width="400" height="280" rx="10" fill="#131c2e" stroke="#22c55e" stroke-width="2" />
+  <text x="460" y="52" fill="#4ade80" font-size="15" font-weight="700">✅ FIXED-PRIORITY + 1kHz PULSE CAGE</text>
+  <text x="460" y="72" fill="#94a3b8" font-size="12">_NTO_CHF_FIXED_PRIORITY + SIGEV_PULSE_INIT</text>
+
+  <rect x="462" y="100" width="135" height="64" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
+  <text x="476" y="127" fill="#bae6fd" font-size="13" font-weight="700">Sandboxed AI</text>
+  <text x="476" y="147" fill="#94a3b8" font-size="12">Prio 20r (Locked)</text>
+
+  <path d="M602 132 L668 132" stroke="#22d3ee" stroke-width="2.5" />
+  <text x="607" y="122" fill="#22d3ee" font-size="11">MsgSend()</text>
+
+  <rect x="675" y="100" width="145" height="64" rx="8" fill="#052e16" stroke="#22c55e" stroke-width="1.8" />
+  <text x="688" y="126" fill="#bbf7d0" font-size="13" font-weight="700">Safety Supervisor</text>
+  <text x="688" y="147" fill="#4ade80" font-size="12" font-weight="700">LOCKED AT 250f!</text>
+
+  <rect x="515" y="205" width="290" height="68" rx="8" fill="#082f49" stroke="#22d3ee" stroke-width="1.5" />
+  <text x="532" y="232" fill="#67e8f9" font-size="13" font-weight="700">⏱️ 1,000 Hz Kernel Timer Pulse (Prio 250)</text>
+  <text x="532" y="253" fill="#e0f2fe" font-size="11.5">Wakes Supervisor every 1.0 ms ➔ Clamps in < 1 µs</text>
+
+  <defs>
+    <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#fbbf24" />
+    </marker>
+  </defs>
+</svg>
