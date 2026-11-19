@@ -1,7 +1,7 @@
 # NeuroGuard-RT: QNX 8.0 Hard Real-Time Surgical AI Safety Cage
 
 > 🔗 **Quick Links:**  
-> 📘 **[25-Minute QNX 8.0 Developer Codelab (`CODELAB.md`)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx8-deterministic-ipc-safety-cage/index.html)** &nbsp;|&nbsp; 🚀 **[One-Command QEMU Launcher (`run_demo.sh`)](run_demo.sh)** &nbsp;|&nbsp; 📊 **[Reaction-Time Profiler (`scripts/benchmark_qnx_vs_linux.py`)](scripts/benchmark_qnx_vs_linux.py)**
+> 📘 **[30-Minute QNX 8.0 Developer Codelab (`CODELAB.md`)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx8-deterministic-ipc-safety-cage/index.html)** &nbsp;|&nbsp; 🚀 **[One-Command QEMU Launcher (`run_demo.sh`)](run_demo.sh)** &nbsp;|&nbsp; 📊 **[Reaction-Time Profiler (`scripts/benchmark_qnx_vs_linux.py`)](scripts/benchmark_qnx_vs_linux.py)**
 
 **NeuroGuard-RT** is a mixed-criticality surgical robotics safety architecture built natively for **QNX SDP 8.0 (`procnto-smp-instr` x86_64)**. It wraps an untrusted, starvable AI tremor-filtering layer (`Priority 20r SCHED_RR`) inside a deterministic **Priority-250f (`SCHED_FIFO`) QNX Microkernel Safety Supervisor** that monitors `1,000 Hz` heartbeats and clamps the surgical actuator inside a glowing **`R = 18.00 mm` Safe Surgical Envelope** in **under 2 microseconds**.
 
