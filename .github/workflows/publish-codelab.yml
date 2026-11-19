@@ -6,6 +6,7 @@ on:
     paths:
       - 'CODELAB.md'
       - 'codelab-assets/**'
+      - 'scripts/build_codelab_site.py'
       - '.github/workflows/publish-codelab.yml'
   workflow_dispatch:
 
@@ -20,6 +21,9 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -28,26 +32,14 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.23'
+          cache: false
 
-      - name: Install claat & export interactive Codelab with SVG sketches
+      - name: Build Codelab site, PNG diagrams, and Starter ZIP
         run: |
+          python3 -m pip install --quiet Pillow
           go install github.com/googlecodelabs/tools/claat@latest
-          mkdir -p _site
-          "$(go env GOPATH)/bin/claat" export -o _site CODELAB.md
-          touch _site/.nojekyll
-          cat << 'EOF' > _site/index.html
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <meta http-equiv="refresh" content="0; url=./qnx8-deterministic-ipc-safety-cage/index.html">
-            </head>
-            <body>
-              <a href="./qnx8-deterministic-ipc-safety-cage/index.html">Open QNX 8.0 Interactive Codelab</a>
-            </body>
-          </html>
-          EOF
+          python3 scripts/build_codelab_site.py
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

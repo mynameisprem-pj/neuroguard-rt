@@ -15,7 +15,7 @@ Duration: 0:02:00
 
 When building mixed-criticality embedded systems—such as a surgical robot or autonomous rover where an untrusted **AI inference thread** proposes movements to a **hard real-time actuator controller**—general-purpose POSIX habits can silently break your real-time guarantees on **QNX Software Development Platform (SDP) 8.0**.
 
-![Comparison between default QNX channel priority lowering and a fixed-priority 1kHz watchdog cage](codelab-assets/priority-trap-sketch.svg)
+![Comparison between default QNX channel priority lowering and a fixed-priority 1kHz watchdog cage](codelab-assets/priority-trap-sketch.png)
 
 Specifically, developers new to the QNX Neutrino microkernel almost always hit two subtle traps:
 
@@ -33,7 +33,7 @@ In this codelab, you will build a complete mixed-criticality **QNX 8.0 Safety Ca
 ### Starter kit & reference downloads
 You can write every file from scratch as you follow along, or download the complete starter & solution archive right now:
 
-<button>[Download Starter & Solution Kit (.zip)](https://github.com/mynameisprem-pj/neuroguard-rt/raw/main/codelab-assets/qnx-safety-lab-kit.zip)</button>
+<button>[Download Starter & Solution Kit (.zip)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx-safety-lab-kit.zip)</button>
 
 ---
 
@@ -515,6 +515,6 @@ Congratulations! You have built, exploited, hardened, and profiled a mixed-criti
 Want to see these exact primitives driving a 5-process surgical robotics simulator with a live `30Hz` Jitter Oscilloscope and workspace visualizer?
 
 [Explore NeuroGuard-RT on GitHub](https://github.com/mynameisprem-pj/neuroguard-rt)
-[Download Starter & Solution Kit (.zip)](https://github.com/mynameisprem-pj/neuroguard-rt/raw/main/codelab-assets/qnx-safety-lab-kit.zip)
+[Download Starter & Solution Kit (.zip)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx-safety-lab-kit.zip)
 
 ```
