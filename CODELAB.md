@@ -515,6 +515,7 @@ Congratulations! You have built, exploited, hardened, and profiled a mixed-criti
 Want to see these exact primitives driving a 5-process surgical robotics simulator with a live `30Hz` Jitter Oscilloscope and workspace visualizer?
 
 [Explore NeuroGuard-RT on GitHub](https://github.com/mynameisprem-pj/neuroguard-rt)
+
 [Download Starter & Solution Kit (.zip)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx-safety-lab-kit.zip)
 
 ```
