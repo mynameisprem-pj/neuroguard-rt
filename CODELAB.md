@@ -99,6 +99,8 @@ mkdir -p ~/qnx-safety-lab && cd ~/qnx-safety-lab
 
 Our Safety Supervisor channel will receive **both** asynchronous 16-byte kernel pulses and synchronous 32-byte client coordinate structs on a single channel.
 
+![Memory layout of lab_msg_t showing struct _pulse at byte offset 0](codelab-assets/pulse-memory-layout.png)
+
 Create `lab_ipc.h`:
 
 ```c
@@ -473,6 +475,8 @@ When a client uses `TimerTimeout(_NTO_TIMEOUT_REPLY)`, the microkernel does **no
 Duration: 0:03:00
 
 Even a perfect supervisor is useless if a compromised AI binary (running as root) can raise its own priority or hang forever on IPC.
+
+![Whiteboard sketch of QNX 8.0 Least-Privilege Sandbox showing procmgr_ability blocking priority escalation, spawn, and raw I/O while allowing bounded MsgSend](codelab-assets/ability-jail-sketch.png)
 
 Create `sandboxed_ai_test.c`:
 
