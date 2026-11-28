@@ -55,9 +55,7 @@ In under 30 minutes you will build, exploit, harden, and benchmark a mixed-criti
 ### Starter kit & reference code
 Write every file from scratch as you follow along, or download the complete starter and solution archive:
 
-<button>
-[Download Starter & Solution Kit (.zip)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx-safety-lab-kit.zip)
-</button>
+<button>[Download Starter & Solution Kit (.zip)](https://mynameisprem-pj.github.io/neuroguard-rt/qnx-safety-lab-kit.zip)</button>
 
 ---
 
@@ -66,19 +64,8 @@ Duration: 0:03:00
 
 You need a Linux or Windows WSL2 host with **QNX SDP 8.0** installed and a running QNX OS 8.0 target (`x86_64` QEMU or Raspberry Pi 5).
 
-<p style="display:flex; gap:16px; flex-wrap:wrap; margin: 16px 0;">
-  <a href="https://www.qnx.com/products/everywhere/" 
-     style="background:#1a73e8; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-weight:500;" 
-     target="_blank">
-    Get a Free QNX Everywhere License
-  </a>
-
-  <a href="https://marketplace.visualstudio.com/items?itemName=qnx.qnx-vscode" 
-     style="background:#1a73e8; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-weight:500;" 
-     target="_blank">
-    Download QNX Toolkit for VS Code
-  </a>
-</p>
+<button>[Get a Free QNX Everywhere License](https://www.qnx.com/products/everywhere/)</button>
+<button>[Download QNX Toolkit for VS Code](https://marketplace.visualstudio.com/items?itemName=qnx.qnx-vscode)</button>
 
 ### Activate the cross-compiler
 ```bash
